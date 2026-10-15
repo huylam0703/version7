@@ -1,0 +1,15 @@
+openapi: 3.0.3
+info:
+  title: Event node.state_updated
+  version: 1.0.0
+  description: sensor-data (4) phát, alert (5) nhận. Alert so với LowBatteryPct, job định kỳ quét TimeoutMin. Envelope nằm trong base.
+paths: {}
+components:
+  schemas:
+    NodeStateUpdatedPayload:
+      type: object
+      required: [nodeId, lastSeenAt]
+      properties:
+        nodeId:     { type: string, format: uuid }
+        batteryPct: { type: integer, minimum: 0, maximum: 100, nullable: true }
+        lastSeenAt: { type: string, format: date-time }

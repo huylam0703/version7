@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: farm-device-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  datasource:
+    url: jdbc:sqlserver://${DB_HOST:localhost}:${DB_PORT:1433};databaseName=${DB_NAME:farm_device_db};encrypt=true;trustServerCertificate=true
+    username: ${DB_USER:MSI}
+    password: ${DB_PASSWORD:1234}
+
+server:
+  port: ${SERVER_PORT:8080}

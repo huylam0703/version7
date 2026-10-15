@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: Event batch.synced
+  version: 1.0.0
+  description: sensor-data (4) phát, mission (3) nhận. Mission cập nhật dbo_M_MissionNodes theo số bản ghi mỗi node. Envelope nằm trong base.
+paths: {}
+components:
+  schemas:
+    BatchNodeCount:
+      type: object
+      required: [nodeId, recordsCount]
+      properties:
+        nodeId:       { type: string, format: uuid }
+        recordsCount: { type: integer, minimum: 0, description: "Số bản ghi mới được lưu cho node trong batch" }
+    BatchSyncedPayload:
+      type: object
+      required: [batchId, gatewayId, recordCount, acceptedCount, duplicateCount, invalidCount, nodes, finishedAt]
+      properties:
+        batchId:        { type: string, format: uuid }
+        gatewayId:      { type: string, format: uuid }
+        missionId:      { type: string, format: uuid, nullable: true }
+        recordCount:    { type: integer, minimum: 0 }
+        acceptedCount:  { type: integer, minimum: 0 }
+        duplicateCount: { type: integer, minimum: 0 }
+        invalidCount:   { type: integer, minimum: 0 }
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/BatchNodeCount' }
+        finishedAt:     { type: string, format: date-time }

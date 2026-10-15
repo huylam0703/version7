@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: Event alert.created
+  version: 1.0.0
+  description: alert (5) phát, notification (6) nhận. Gửi web và email; notification lấy danh sách ADMIN từ user-auth qua REST. Envelope nằm trong base.
+paths: {}
+components:
+  schemas:
+    AlertType:
+      type: string
+      enum: [OUT_OF_RANGE, DATA_TIMEOUT, LOW_BATTERY, COLLECTION_FAILED, MISSION_FAILED]
+    AlertSeverity:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    AlertCreatedPayload:
+      type: object
+      required: [alertId, type, severity, message]
+      properties:
+        alertId:      { type: string, format: uuid }
+        type:         { $ref: '#/components/schemas/AlertType' }
+        severity:     { $ref: '#/components/schemas/AlertSeverity' }
+        message:      { type: string, maxLength: 500 }
+        thresholdId:  { type: string, format: uuid, nullable: true }
+        readingId:    { type: string, format: uuid, nullable: true }
+        nodeId:       { type: string, format: uuid, nullable: true }
+        zoneId:       { type: string, format: uuid, nullable: true }
+        missionId:    { type: string, format: uuid, nullable: true }
+        triggerValue: { type: number, format: double, nullable: true }
+        triggeredAt:  { type: string, format: date-time }
