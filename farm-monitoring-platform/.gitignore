@@ -487,6 +487,7 @@ target/
 *.class
 .idea/
 *.iml
+*.xml
 
 # Code sinh từ contracts (không commit)
 platform/dotnet/src/Farm.Contracts/
