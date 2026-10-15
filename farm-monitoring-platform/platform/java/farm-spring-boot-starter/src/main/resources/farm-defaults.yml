@@ -1,0 +1,42 @@
+spring:
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate            # service nào cần tự tạo bảng thì bật update ở profile dev
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl   # giữ nguyên tên cột PascalCase
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: false                  # bật khi chuyển sang dùng script SQL
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:5001/.well-known/jwks.json}
+
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true          # dòng mới: bật livenessState / readinessState
+      group:
+        live:  { include: livenessState }
+        ready: { include: readinessState,db }

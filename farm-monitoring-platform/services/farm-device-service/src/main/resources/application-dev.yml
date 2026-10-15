@@ -1,0 +1,16 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update          # tự tạo bảng khi chạy
+    properties:
+      hibernate:
+        format_sql: true
+
+farm:
+  security:
+    enabled: false              # chạy riêng lẻ, chưa cần user-auth
+    dev-user-id: 00000000-0000-0000-0000-000000000001
+
+logging:
+  level:
+    org.hibernate.SQL: debug

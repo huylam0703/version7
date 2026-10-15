@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>vn.farm.platform</groupId>
+  <artifactId>farm-platform-parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <spring-boot.version>3.5.6</spring-boot.version> <!-- thay bằng bản 3.5.x mới nhất -->
+  </properties>
+
+  <modules>
+    <module>farm-core</module>
+    <module>farm-contracts</module>
+    <module>farm-spring-boot-starter</module>
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- khóa version toàn bộ thư viện Spring Boot -->
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!-- khóa version module nội bộ để service chỉ khai báo không cần version -->
+      <dependency>
+        <groupId>vn.farm.platform</groupId>
+        <artifactId>farm-spring-boot-starter</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>vn.farm.platform</groupId>
+        <artifactId>farm-contracts</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+          <executions>
+            <execution><goals><goal>repackage</goal></goals></execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

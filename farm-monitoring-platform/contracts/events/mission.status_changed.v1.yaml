@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: Event mission.status_changed
+  version: 1.0.0
+  description: >
+    mission (3) phát, farm-device (2) và alert (5) nhận. Farm-device cập nhật Status của dbo_FD_Uavs, dbo_FD_Gateways.
+    Trạng thái FAILED hoặc PARTIAL sinh cảnh báo MISSION_FAILED, COLLECTION_FAILED. Envelope nằm trong base.
+paths: {}
+components:
+  schemas:
+    MissionStatus:
+      type: string
+      enum: [DRAFT, PLANNED, RUNNING, COMPLETED, PARTIAL, FAILED, CANCELLED]
+    MissionNodeResult:
+      type: string
+      enum: [PENDING, SUCCESS, PARTIAL, FAILED]
+    MissionNodeErrorCode:
+      type: string
+      enum: [NOT_FOUND, AUTH_FAIL, TIMEOUT, INVALID_DATA]
+    MissionNodeFailure:
+      type: object
+      required: [nodeId, result]
+      properties:
+        nodeId:       { type: string, format: uuid }
+        result:       { $ref: '#/components/schemas/MissionNodeResult' }
+        errorCode:    { $ref: '#/components/schemas/MissionNodeErrorCode' }
+        errorMessage: { type: string }
+    MissionStatusChangedPayload:
+      type: object
+      required: [missionId, farmId, uavId, gatewayId, newStatus, changedAt]
+      properties:
+        missionId:    { type: string, format: uuid }
+        farmId:       { type: string, format: uuid }
+        uavId:        { type: string, format: uuid }
+        gatewayId:    { type: string, format: uuid }
+        oldStatus:    { allOf: [ { $ref: '#/components/schemas/MissionStatus' } ], nullable: true }
+        newStatus:    { $ref: '#/components/schemas/MissionStatus' }
+        totalNodes:   { type: integer, minimum: 0 }
+        successNodes: { type: integer, minimum: 0 }
+        failedNodes:  { type: integer, minimum: 0 }
+        failures:
+          type: array
+          description: Node lỗi, có khi newStatus là FAILED hoặc PARTIAL
+          items: { $ref: '#/components/schemas/MissionNodeFailure' }
+        changedAt:    { type: string, format: date-time }

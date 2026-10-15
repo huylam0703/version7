@@ -1,0 +1,7 @@
+vn.farm.starter.web.FarmWebAutoConfiguration
+vn.farm.starter.security.FarmSecurityAutoConfiguration
+vn.farm.starter.events.FarmEventsAutoConfiguration
+vn.farm.starter.jpa.FarmJpaAutoConfiguration
+vn.farm.starter.client.FarmClientAutoConfiguration
+
+

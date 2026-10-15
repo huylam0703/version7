@@ -1,0 +1,20 @@
+openapi: 3.0.3
+info:
+  title: Event readings.synced
+  version: 1.0.0
+  description: sensor-data (4) phát, alert (5) nhận. Alert so với ngưỡng và tạo cảnh báo OUT_OF_RANGE. Envelope nằm trong base.
+paths: {}
+components:
+  schemas:
+    ReadingsSyncedPayload:
+      type: object
+      required: [nodeId, zoneId, typeId, value, measuredAt]
+      properties:
+        readingId:  { type: string, format: uuid, description: "dbo_SD_SensorReadings.ReadingId, để alert ghi ref" }
+        nodeId:     { type: string, format: uuid }
+        zoneId:     { type: string, format: uuid }
+        typeId:     { type: string, format: uuid }
+        channelId:  { type: string, format: uuid }
+        missionId:  { type: string, format: uuid, nullable: true }
+        value:      { type: number, format: double }
+        measuredAt: { type: string, format: date-time }

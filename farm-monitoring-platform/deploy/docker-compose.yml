@@ -1,0 +1,56 @@
+name: farm-monitoring-platform
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SA_PASSWORD}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # Chạy một lần để tạo 6 database
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      SA_PASSWORD: ${SA_PASSWORD}
+    volumes:
+      - ./db/init:/init:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for f in /init/*.sql; do
+          echo "Chạy $$f";
+          /opt/mssql-tools18/bin/sqlcmd -C -S sqlserver -U sa -P "$$SA_PASSWORD" -i "$$f" || exit 1;
+        done
+    restart: "no"
+
+  # ---- Mẫu cho một service (bỏ comment và sửa khi đã có Dockerfile) ----
+  # user-auth:
+  #   build: ./services/user-auth
+  #   profiles: ["dotnet"]
+  #   depends_on:
+  #     db-init:
+  #       condition: service_completed_successfully
+  #   environment:
+  #     ConnectionStrings__Default: "Server=sqlserver;Database=user_auth_db;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True"
+  #     Jwt__Issuer: ${JWT_ISSUER}
+  #     Jwt__Audience: ${JWT_AUDIENCE}
+  #   volumes:
+  #     - ./keys:/keys:ro
+  #   ports:
+  #     - "8081:8080"
+
+volumes:
+  sqldata:
