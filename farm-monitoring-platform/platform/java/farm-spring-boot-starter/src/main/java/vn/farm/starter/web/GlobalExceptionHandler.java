@@ -1,77 +1,73 @@
 package vn.farm.starter.web;
 
 import jakarta.validation.ConstraintViolationException;
-import java.net.URI;
-import java.util.*;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import vn.farm.core.BusinessException;
+import vn.farm.core.api.ApiResponse;
 
+import java.util.stream.Collectors;
+
+/** Shared error envelope: HTTP status + numeric application code. */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /** Lỗi validate body (@Valid): sinh từ ràng buộc trong file OpenAPI. */
+    private ResponseEntity<ApiResponse<Void>> error(HttpStatus status, int code, String message) {
+        return ResponseEntity.status(status).body(ApiResponse.<Void>builder()
+                .code(code).message(message).build());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ProblemDetail onInvalidBody(MethodArgumentNotValidException ex) {
-        Map<String, List<String>> errors = ex.getBindingResult().getFieldErrors().stream()
-                .collect(Collectors.groupingBy(
-                        e -> e.getField(),
-                        LinkedHashMap::new,
-                        Collectors.mapping(e -> String.valueOf(e.getDefaultMessage()), Collectors.toList())));
-        return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Dữ liệu không hợp lệ.", errors);
+    public ResponseEntity<ApiResponse<Void>> invalidBody(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> e.getField() + ": " + e.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        return error(HttpStatus.BAD_REQUEST, 1001, message.isBlank() ? "Invalid request" : message);
     }
 
-    /** Lỗi validate tham số path/query. */
     @ExceptionHandler(ConstraintViolationException.class)
-    public ProblemDetail onInvalidParam(ConstraintViolationException ex) {
-        Map<String, List<String>> errors = ex.getConstraintViolations().stream()
-                .collect(Collectors.groupingBy(
-                        v -> v.getPropertyPath().toString(),
-                        LinkedHashMap::new,
-                        Collectors.mapping(v -> v.getMessage(), Collectors.toList())));
-        return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Dữ liệu không hợp lệ.", errors);
+    public ResponseEntity<ApiResponse<Void>> invalidParam(ConstraintViolationException ex) {
+        return error(HttpStatus.BAD_REQUEST, 1001, "Invalid request parameters");
     }
 
-    /** Lỗi nghiệp vụ do tầng service ném ra. */
     @ExceptionHandler(BusinessException.class)
-    public ProblemDetail onBusiness(BusinessException ex) {
+    public ResponseEntity<ApiResponse<Void>> business(BusinessException ex) {
         HttpStatus status = switch (ex.getType()) {
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
             case CONFLICT -> HttpStatus.CONFLICT;
             case UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
+            case FAILURE -> HttpStatus.INTERNAL_SERVER_ERROR;
             default -> HttpStatus.BAD_REQUEST;
         };
-        return problem(status, ex.getCode(), ex.getMessage(), null);
+        int code = switch (ex.getType()) {
+            case NOT_FOUND -> 1004;
+            case CONFLICT -> 1009;
+            case UNAUTHORIZED -> 1006;
+            case FORBIDDEN -> 1007;
+            case FAILURE -> 9999;
+            default -> 1001;
+        };
+        // BusinessException.getCode() retains the domain-specific string code for logging.
+        log.debug("Business error {}: {}", ex.getCode(), ex.getMessage());
+        return error(status, code, ex.getMessage());
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ProblemDetail onDenied(AccessDeniedException ex) {
-        return problem(HttpStatus.FORBIDDEN, "FORBIDDEN", "Không đủ quyền truy cập.", null);
+    public ResponseEntity<ApiResponse<Void>> denied(AccessDeniedException ex) {
+        return error(HttpStatus.FORBIDDEN, 1007, "Access denied");
     }
 
     @ExceptionHandler(Exception.class)
-    public ProblemDetail onUnexpected(Exception ex) {
+    public ResponseEntity<ApiResponse<Void>> unexpected(Exception ex) {
         log.error("Unhandled exception", ex);
-        return problem(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Lỗi hệ thống", null);
-    }
-
-    private static ProblemDetail problem(HttpStatus status, String code, String title, Map<String, List<String>> errors) {
-        ProblemDetail pd = ProblemDetail.forStatus(status);
-        pd.setTitle(title);
-        pd.setType(URI.create("urn:farm:error:" + code));
-        pd.setProperty("code", code);
-        pd.setProperty("traceId", MDC.get("traceId"));
-        if (errors != null) pd.setProperty("errors", errors);
-        return pd;
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, 9999, "Internal server error");
     }
 }

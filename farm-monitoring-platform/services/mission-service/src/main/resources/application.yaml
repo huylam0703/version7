@@ -1,0 +1,21 @@
+server:
+  port: 8083
+  servlet:
+    context-path: /api/v1/mission
+
+spring:
+  application:
+    name: mission-service
+
+  datasource:
+    url: jdbc:sqlserver://localhost:1433;databaseName=farm_mission_db;encrypt=true;trustServerCertificate=true
+    username: MSI
+    password: 1234
+
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+
+  flyway:
+    enabled: false
