@@ -47,7 +47,7 @@ public class MissionNode {
     int recordsCount=0;
 
     @Column(name="Attempts",nullable=false)
-    short attempts=0;
+    Integer attempts=0;
 
     @Column(name="CollectedAt",columnDefinition="datetime2(3)")
     Instant collectedAt;
