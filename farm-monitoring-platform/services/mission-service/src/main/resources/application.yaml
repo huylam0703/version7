@@ -3,9 +3,18 @@ server:
   servlet:
     context-path: /api/v1/mission
 
+management:
+  health:
+    rabbit:
+      enabled: false
+farm:
+  security:
+    enabled: false
 spring:
   application:
     name: mission-service
+  profiles:
+    active: dev
 
   datasource:
     url: jdbc:sqlserver://localhost:1433;databaseName=farm_mission_db;encrypt=true;trustServerCertificate=true
