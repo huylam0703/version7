@@ -1,4 +1,11 @@
 package vn.farm.mission.repository;
 
-public interface WaypointRepository {
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import vn.farm.mission.entity.Waypoint;
+
+import java.util.UUID;
+
+@Repository
+public interface WaypointRepository extends JpaRepository<Waypoint, UUID> {
 }
