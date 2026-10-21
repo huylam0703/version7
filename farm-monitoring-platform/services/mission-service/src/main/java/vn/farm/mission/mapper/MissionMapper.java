@@ -3,8 +3,11 @@ package vn.farm.mission.mapper;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import vn.farm.mission.dto.request.CreateMissionRequest;
+import vn.farm.mission.dto.response.MissionDetailResponse;
 import vn.farm.mission.dto.response.MissionResponse;
+import vn.farm.mission.dto.response.WaypointResponse;
 import vn.farm.mission.entity.Mission;
+import vn.farm.mission.entity.Waypoint;
 
 @Mapper(componentModel = "spring")
 public interface MissionMapper {
@@ -20,4 +23,12 @@ public interface MissionMapper {
     Mission toMission(CreateMissionRequest request);
 
     MissionResponse toMissionResponse(Mission mission);
+
+    @Mapping(target = "waypoints", ignore = true)
+    @Mapping(target = "nodeIds", ignore = true)
+    MissionDetailResponse toMissionDetailResponse(Mission mission);
+
+    WaypointResponse toWaypointResponse(Waypoint waypoint);
+
+
 }
