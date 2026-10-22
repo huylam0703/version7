@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Application\Farm.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Abstractions\Farm.BuildingBlocks.Abstractions.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
