@@ -1,42 +1,39 @@
 ﻿using System.Diagnostics;
+
 using Farm.BuildingBlocks.Abstractions;
-using Microsoft.AspNetCore.Mvc;
+
 using MediatR;
+
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Farm.BuildingBlocks.Web;
 
 public static class ResultExtensions
 {
-    public static IActionResult ToActionResult<T>(this Result<T> result, Func<T, IActionResult>? onSuccess = null)
+    /// Thành công: { code: OK, message, result }. Lỗi: { code, message, result: null, errors, traceId }.
+    public static IActionResult ToActionResult<T>(this Result<T> result, string? message = null,
+        int successStatus = StatusCodes.Status200OK)
     {
-        if (result.IsFailure) return ToProblem(result.Error!);
-        if (onSuccess is not null) return onSuccess(result.Value);
-        if (typeof(T) == typeof(Unit)) return new NoContentResult();
-        return new OkObjectResult(result.Value);
+        if (result.IsFailure) return ToFailure(result.Error!);
+
+        object? data = typeof(T) == typeof(Unit) ? null : result.Value;
+        return new ObjectResult(ApiResponse.Ok(data, message ?? "Thành công")) { StatusCode = successStatus };
     }
 
-    private static IActionResult ToProblem(Error error)
+    private static IActionResult ToFailure(Error error)
     {
-        var status = error.Type switch
+        var (status, code) = error.Type switch
         {
-            ErrorType.Validation   => 400,
-            ErrorType.Unauthorized => 401,
-            ErrorType.Forbidden    => 403,
-            ErrorType.NotFound     => 404,
-            ErrorType.Conflict     => 409,
-            _                      => 400
+            ErrorType.Validation => (400, ResultCode.ErrorInputInvalid),
+            ErrorType.Unauthorized => (401, ResultCode.Unauthorized),
+            ErrorType.Forbidden => (403, ResultCode.WarningForbidden),
+            ErrorType.NotFound => (404, ResultCode.WarningNoContent),
+            ErrorType.Conflict => (409, ResultCode.ErrorConflict),
+            _ => (400, ResultCode.ErrorFail)
         };
 
-        var pd = new ProblemDetails
-        {
-            Status = status,
-            Title = error.Message,
-            Type = $"urn:farm:error:{error.Code}"
-        };
-        pd.Extensions["code"] = error.Code;
-        pd.Extensions["traceId"] = Activity.Current?.TraceId.ToString();
-        if (error.Details is not null) pd.Extensions["errors"] = error.Details;
-
-        return new ObjectResult(pd) { StatusCode = status, ContentTypes = { "application/problem+json" } };
+        var body = ApiResponse.Fail(code, error.Message, error.Details, Activity.Current?.TraceId.ToString());
+        return new ObjectResult(body) { StatusCode = status };
     }
 }

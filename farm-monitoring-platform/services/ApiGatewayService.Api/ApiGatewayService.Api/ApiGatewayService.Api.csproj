@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Abstractions\Farm.BuildingBlocks.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Web\Farm.BuildingBlocks.Web.csproj" />
     <ProjectReference Include="..\ApiGatewayService.Application\ApiGatewayService.Application.csproj" />
     <ProjectReference Include="..\ApiGatewayService.Infrastructure\ApiGatewayService.Infrastructure.csproj" />

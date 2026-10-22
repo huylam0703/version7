@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UserAuthService.Api\UserAuthService.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Commands\Auth\" />
+    <Folder Include="Commands\Users\" />
+    <Folder Include="Queries\Auth\" />
+    <Folder Include="Queries\Users\" />
+  </ItemGroup>
+
+</Project>

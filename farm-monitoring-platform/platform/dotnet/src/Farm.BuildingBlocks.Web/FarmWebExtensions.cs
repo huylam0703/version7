@@ -2,9 +2,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using Farm.BuildingBlocks.Abstractions;
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -78,7 +81,21 @@ public static class FarmWebExtensions
     public static WebApplication UseFarmWeb(this WebApplication app)
     {
         app.UseExceptionHandler();
-        app.UseStatusCodePages();
+        app.UseStatusCodePages(async context =>
+        {
+            var http = context.HttpContext;
+            var code = http.Response.StatusCode switch
+            {
+                StatusCodes.Status401Unauthorized => ResultCode.Unauthorized,
+                StatusCodes.Status403Forbidden => ResultCode.WarningForbidden,
+                StatusCodes.Status404NotFound => ResultCode.WarningNoContent,
+                StatusCodes.Status405MethodNotAllowed => ResultCode.MethodNotAllowed,
+                502 or 503 or 504 => ResultCode.ErrorServiceUnavailable,
+                _ => ResultCode.ErrorFail
+            };
+            var body = ApiResponse.Fail(code, traceId: Activity.Current?.TraceId.ToString() ?? http.TraceIdentifier);
+            await http.Response.WriteAsJsonAsync(body, FarmJson.Options, "application/json");
+        });
         app.UseAuthentication();
         app.UseAuthorization();
 

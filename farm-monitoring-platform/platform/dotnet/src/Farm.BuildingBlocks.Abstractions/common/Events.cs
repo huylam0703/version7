@@ -12,7 +12,7 @@ public sealed record EventEnvelope<T>(
 
 public interface IEventBus
 {
-    Task PublishAsync<T>(string eventType, T payload, CancellationToken ct = default);
+    Task PublishAsync<T>(string eventType, T payload, int version = 1, CancellationToken ct = default);
 }
 
 public interface IEventHandler<T>

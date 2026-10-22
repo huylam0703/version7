@@ -2,9 +2,11 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 
+
 using ApiGatewayService.Application;
 using ApiGatewayService.Infrastructure;
 
+using Farm.BuildingBlocks.Abstractions;
 using Farm.BuildingBlocks.Web;
 
 using Microsoft.AspNetCore.Mvc;
@@ -50,16 +52,12 @@ builder.Services.AddRateLimiter(o =>
     o.OnRejected = async (context, ct) =>
     {
         var http = context.HttpContext;
-        http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-        var pd = new ProblemDetails
-        {
-            Status = 429,
-            Title = "Gửi quá nhiều yêu cầu, vui lòng thử lại sau.",
-            Type = "urn:farm:error:RATE_LIMITED"
-        };
-        pd.Extensions["code"] = "RATE_LIMITED";
-        pd.Extensions["traceId"] = Activity.Current?.TraceId.ToString();
-        await http.Response.WriteAsJsonAsync(pd, (JsonSerializerOptions?)null, "application/problem+json", ct);
+        http.Response.StatusCode = StatusCodes.Status429TooManyRequests;  
+
+        var body = ApiResponse.Fail(ResultCode.ErrorRateLimited,          
+            traceId: Activity.Current?.TraceId.ToString());
+
+        await http.Response.WriteAsJsonAsync(body, FarmJson.Options, "application/json", ct); 
     };
 });
 
