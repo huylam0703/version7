@@ -1,0 +1,134 @@
+openapi: 3.0.3
+info:
+  title: Mission API
+  version: 1.0.0
+  description: Mission Service - Create Mission (Version7, ApiResponse code/message/result)
+servers:
+  - url: /
+paths:
+  /api/v1/missions:
+    post:
+      tags: [Missions]
+      operationId: createMission
+      summary: Create a draft mission with waypoints and sensor nodes
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMissionRequest'
+      responses:
+        '201':
+          description: Mission created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMissionApiResponse'
+        '400':
+          description: Invalid input, duplicate node IDs or waypoint sequences
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorApiResponse' }
+        '401':
+          description: Missing or invalid JWT (requires matching security filter handlers)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorApiResponse' }
+        '403':
+          description: Forbidden (requires matching security filter handlers)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorApiResponse' }
+        '404':
+          description: Referenced resource not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorApiResponse' }
+        '409':
+          description: Business conflict
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorApiResponse' }
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorApiResponse' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CreateMissionRequest:
+      type: object
+      required: [farmId, uavId, gatewayId, name, nodeIds, waypoints]
+      properties:
+        farmId: { type: string, format: uuid }
+        uavId: { type: string, format: uuid }
+        gatewayId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 150 }
+        plannedAt: { type: string, format: date-time, description: 'UTC ISO 8601' }
+        nodeIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        waypoints:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/WaypointRequest' }
+    WaypointRequest:
+      type: object
+      required: [seq, lat, lng]
+      properties:
+        seq: { type: integer, format: int32, minimum: 1, maximum: 32767 }
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        altitudeM: { type: number, minimum: 0, maximum: 9999.99 }
+    WaypointResponse:
+      type: object
+      required: [waypointId, seq, lat, lng, altitudeM, status]
+      properties:
+        waypointId: { type: string, format: uuid }
+        seq: { type: integer, format: int32 }
+        lat: { type: number }
+        lng: { type: number }
+        altitudeM: { type: number }
+        status: { type: string, enum: [PENDING, REACHED, SKIPPED] }
+    MissionResponse:
+      type: object
+      required: [missionId, farmId, uavId, gatewayId, createdBy, name, status, totalNodes, nodeIds, waypoints]
+      properties:
+        missionId: { type: string, format: uuid }
+        farmId: { type: string, format: uuid }
+        uavId: { type: string, format: uuid }
+        gatewayId: { type: string, format: uuid }
+        createdBy: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string, enum: [DRAFT, PLANNED, RUNNING, COMPLETED, PARTIAL, FAILED, CANCELLED] }
+        plannedAt: { type: string, format: date-time }
+        totalNodes: { type: integer, format: int32 }
+        nodeIds:
+          type: array
+          items: { type: string, format: uuid }
+        waypoints:
+          type: array
+          items: { $ref: '#/components/schemas/WaypointResponse' }
+    CreateMissionApiResponse:
+      type: object
+      required: [code, result]
+      properties:
+        code: { type: integer, format: int32, example: 1000 }
+        message: { type: string, example: Mission created successfully }
+        result: { $ref: '#/components/schemas/MissionResponse' }
+    ErrorApiResponse:
+      type: object
+      required: [code, message]
+      description: Result is omitted because JsonInclude.NON_NULL is enabled.
+      properties:
+        code: { type: integer, format: int32, example: 1001 }
+        message: { type: string, example: Invalid request }
