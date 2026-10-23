@@ -356,6 +356,68 @@ public class MissionService {
 
         // Cần lưu MissionStatusLog khi trạng thái thay đổi.
 
+        MissionResponse response = missionMapper.toMissionResponse(saved);
+
+        List<Waypoint> waypoints =
+                waypointRepository.findByMission_MissionIdOrderBySeqAsc(
+                        saved.getMissionId()
+                );
+
+        response.setWaypoints(
+                waypoints.stream()
+                        .map(missionMapper::toWaypointResponse)
+                        .toList()
+        );
+
+        response.setNodeIds(
+                missionNodes.stream()
+                        .map(MissionNode::getNodeId)
+                        .toList()
+        );
+
+        return response;
+    }
+
+    @Transactional
+    public MissionResponse planMission(UUID missionId) {
+
+        Mission mission = missionRepository.findById(missionId)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "MISSION_NOT_FOUND",
+                        "Mission không tồn tại"
+                ));
+
+        if (mission.getStatus() != MissionStatus.DRAFT) {
+            throw BusinessException.invalid(
+                    "INVALID_MISSION_STATUS",
+                    "Chỉ Mission ở trạng thái DRAFT mới được lập kế hoạch"
+            );
+        }
+
+        List<Waypoint> waypoints =
+                waypointRepository.findByMission_MissionIdOrderBySeqAsc(missionId);
+
+        if (waypoints.isEmpty()) {
+            throw BusinessException.invalid(
+                    "WAYPOINT_REQUIRED",
+                    "Mission phải có ít nhất một Waypoint"
+            );
+        }
+
+        List<MissionNode> missionNodes =
+                missionNodeRepository.findByMission_MissionId(missionId);
+
+        if (missionNodes.isEmpty()) {
+            throw BusinessException.invalid(
+                    "NODE_REQUIRED",
+                    "Mission phải có ít nhất một Sensor Node"
+            );
+        }
+
+        mission.setStatus(MissionStatus.PLANNED);
+
+        Mission saved = missionRepository.save(mission);
+
         return missionMapper.toMissionResponse(saved);
     }
 }
