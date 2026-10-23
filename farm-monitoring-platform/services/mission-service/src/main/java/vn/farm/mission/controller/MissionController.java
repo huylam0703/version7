@@ -109,4 +109,15 @@ public class MissionController {
                         .result(missionService.receiveMissionResults(missionId, request))
                         .build());
     }
+
+    @PostMapping("/{missionId}/plan")
+    public ResponseEntity<ApiResponse<MissionResponse>> planMission(
+            @PathVariable UUID missionId
+    ) {
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(ApiResponse.<MissionResponse>builder()
+                        .message("Plan mission successfully")
+                        .result(missionService.planMission(missionId))
+                        .build());
+    }
 }
