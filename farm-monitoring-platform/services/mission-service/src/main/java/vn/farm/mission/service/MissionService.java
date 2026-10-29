@@ -82,13 +82,14 @@ public class MissionService {
             missionNodeRepository.save(node);
         }
 
-        MissionStatusLog log = new MissionStatusLog();
-        log.setMission(mission);
-        log.setChangedBy(mission.getCreatedBy());
-        log.setSource("SYSTEM");
-        log.setNewStatus("DRAFT");
-        log.setCreatedAt(Instant.now());
-        missionStatusLogRepository.save(log);
+        createMissionStatusLog(
+                mission,
+                "",
+                "DRAFT",
+                mission.getCreatedBy(),
+                "SYSTEM",
+                "Mission create"
+        );
 
         List<WaypointResponse> wpResponse = saveWaypoints.stream()
                 .map(waypoint -> new WaypointResponse(waypoint.getWaypointId(),
@@ -214,13 +215,21 @@ public class MissionService {
                     "Chỉ Mission ở trạng thái PLANNED mới được bắt đầu"
             );
         }
-
+        String oldStatus = String.valueOf(mission.getStatus());
         mission.setStatus(MissionStatus.RUNNING);
         mission.setStartedAt(Instant.now());
 
         Mission saved = missionRepository.save(mission);
 
         // Cần lưu MissionStatusLog tại đây.
+        createMissionStatusLog(
+                mission,
+                oldStatus,
+                "RUNNING",
+                mission.getCreatedBy(),
+                "OPERATOR",
+                "Mission running"
+        );
 
         return missionMapper.toMissionResponse(saved);
     }
@@ -246,13 +255,21 @@ public class MissionService {
                     "Mission đã kết thúc, không thể hủy"
             );
         }
-
+        String oldStatus = String.valueOf(mission.getStatus());
         mission.setStatus(MissionStatus.CANCELLED);
         mission.setEndedAt(Instant.now());
 
         Mission saved = missionRepository.save(mission);
 
         // Cần lưu MissionStatusLog tại đây.
+        createMissionStatusLog(
+                mission,
+                oldStatus,
+                "CANCELLED",
+                mission.getCreatedBy(),
+                "OPERATOR",
+                "Mission cancelled"
+        );
 
         return missionMapper.toMissionResponse(saved);
     }
@@ -341,11 +358,44 @@ public class MissionService {
         mission.setFailedNodes(failedCount);
 
         if (failedCount == 0) {
+            String oldStatus = String.valueOf(mission.getStatus());
+
             mission.setStatus(MissionStatus.COMPLETED);
+
+            createMissionStatusLog(
+                    mission,
+                    oldStatus,
+                    "COMPLETED",
+                    mission.getCreatedBy(),
+                    "OPERATOR",
+                    "Mission completed"
+            );
         } else if (successCount == 0) {
+            String oldStatus = String.valueOf(mission.getStatus());
+
             mission.setStatus(MissionStatus.FAILED);
+
+            createMissionStatusLog(
+                    mission,
+                    oldStatus,
+                    "FAILED",
+                    mission.getCreatedBy(),
+                    "OPERATOR",
+                    "Mission failed"
+            );
         } else {
+            String oldStatus = String.valueOf(mission.getStatus());
+
             mission.setStatus(MissionStatus.PARTIAL);
+
+            createMissionStatusLog(
+                    mission,
+                    oldStatus,
+                    "PARTIAL",
+                    mission.getCreatedBy(),
+                    "OPERATOR",
+                    "Mission partial"
+            );
         }
 
         mission.setEndedAt(Instant.now());
@@ -411,10 +461,19 @@ public class MissionService {
                     "Mission phải có ít nhất một Sensor Node"
             );
         }
-
+        String oldStatus = String.valueOf(mission.getStatus());
         mission.setStatus(MissionStatus.PLANNED);
 
         Mission saved = missionRepository.save(mission);
+
+        createMissionStatusLog(
+                mission,
+                oldStatus,
+                "PLANNED",
+                mission.getCreatedBy(),
+                "OPERATOR",
+                "Mission planned"
+        );
 
         return missionMapper.toMissionResponse(saved);
     }
@@ -468,5 +527,26 @@ public class MissionService {
                         .createdAt(log.getCreatedAt())
                         .build())
                 .toList();
+    }
+
+    public void createMissionStatusLog(
+            Mission mission,
+            String oldStatus,
+            String newStatus,
+            UUID changedBy,
+            String source,
+            String note
+    ) {
+        MissionStatusLog log = MissionStatusLog.builder()
+                .mission(mission)
+                .oldStatus(oldStatus)
+                .newStatus(newStatus)
+                .changedBy(changedBy)
+                .source(source)
+                .note(note)
+                .createdAt(Instant.now())
+                .build();
+
+        missionStatusLogRepository.save(log);
     }
 }
