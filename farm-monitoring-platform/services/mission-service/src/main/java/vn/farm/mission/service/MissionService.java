@@ -510,7 +510,10 @@ public class MissionService {
             UUID missionId) {
 
         missionRepository.findById(missionId)
-                .orElseThrow(() -> new RuntimeException("Mission not found"));
+                .orElseThrow(() -> BusinessException.notFound(
+                        "MISSION_NOT_FOUND",
+                        "Mission không tồn tại"
+                ));
 
         List<MissionStatusLog> logs =
                 missionStatusLogRepository
