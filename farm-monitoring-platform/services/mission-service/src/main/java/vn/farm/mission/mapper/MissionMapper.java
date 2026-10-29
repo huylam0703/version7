@@ -28,6 +28,7 @@ public interface MissionMapper {
     @Mapping(target = "nodeIds", ignore = true)
     MissionDetailResponse toMissionDetailResponse(Mission mission);
 
+    @Mapping(source = "altM", target = "altitudeM")
     WaypointResponse toWaypointResponse(Waypoint waypoint);
 
 

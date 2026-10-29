@@ -15,10 +15,13 @@ import vn.farm.mission.dto.request.CreateMissionRequest;
 import vn.farm.mission.dto.request.MissionResultRequest;
 import vn.farm.mission.dto.request.UpdateMissionRequest;
 import vn.farm.mission.dto.response.MissionDetailResponse;
+import vn.farm.mission.dto.response.MissionNodeResultResponse;
 import vn.farm.mission.dto.response.MissionResponse;
+import vn.farm.mission.dto.response.MissionStatusLogResponse;
 import vn.farm.mission.entity.MissionStatus;
 import vn.farm.mission.service.MissionService;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -108,5 +111,38 @@ public class MissionController {
                         .message("Receive mission results successfully")
                         .result(missionService.receiveMissionResults(missionId, request))
                         .build());
+    }
+
+    @PostMapping("/{missionId}/plan")
+    public ResponseEntity<ApiResponse<MissionResponse>> planMission(
+            @PathVariable UUID missionId
+    ) {
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(ApiResponse.<MissionResponse>builder()
+                        .message("Plan mission successfully")
+                        .result(missionService.planMission(missionId))
+                        .build());
+    }
+
+    @GetMapping("/{missionId}/results")
+    public ResponseEntity<ApiResponse<List<MissionNodeResultResponse>>> getMissionResults(
+            @PathVariable UUID missionId) {
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(ApiResponse.<List<MissionNodeResultResponse>>builder()
+                        .message("Get mission results successfully")
+                        .result(missionService.getMissionResults(missionId))
+                        .build());
+    }
+
+    @GetMapping("/{missionId}/status-logs")
+    public ApiResponse<List<MissionStatusLogResponse>> getMissionStatusHistory(
+            @PathVariable UUID missionId) {
+
+        return ApiResponse.<List<MissionStatusLogResponse>>builder()
+                .code(1000)
+                .message("Get mission status history successfully")
+                .result(missionService.getMissionStatusHistory(missionId))
+                .build();
     }
 }

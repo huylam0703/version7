@@ -13,9 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.farm.core.BusinessException;
 import vn.farm.mission.dto.request.*;
-import vn.farm.mission.dto.response.MissionDetailResponse;
-import vn.farm.mission.dto.response.MissionResponse;
-import vn.farm.mission.dto.response.WaypointResponse;
+import vn.farm.mission.dto.response.*;
 import vn.farm.mission.entity.*;
 import vn.farm.mission.mapper.MissionMapper;
 import vn.farm.mission.repository.MissionNodeRepository;
@@ -356,6 +354,119 @@ public class MissionService {
 
         // Cần lưu MissionStatusLog khi trạng thái thay đổi.
 
+        MissionResponse response = missionMapper.toMissionResponse(saved);
+
+        List<Waypoint> waypoints =
+                waypointRepository.findByMission_MissionIdOrderBySeqAsc(
+                        saved.getMissionId()
+                );
+
+        response.setWaypoints(
+                waypoints.stream()
+                        .map(missionMapper::toWaypointResponse)
+                        .toList()
+        );
+
+        response.setNodeIds(
+                missionNodes.stream()
+                        .map(MissionNode::getNodeId)
+                        .toList()
+        );
+
+        return response;
+    }
+
+    @Transactional
+    public MissionResponse planMission(UUID missionId) {
+
+        Mission mission = missionRepository.findById(missionId)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "MISSION_NOT_FOUND",
+                        "Mission không tồn tại"
+                ));
+
+        if (mission.getStatus() != MissionStatus.DRAFT) {
+            throw BusinessException.invalid(
+                    "INVALID_MISSION_STATUS",
+                    "Chỉ Mission ở trạng thái DRAFT mới được lập kế hoạch"
+            );
+        }
+
+        List<Waypoint> waypoints =
+                waypointRepository.findByMission_MissionIdOrderBySeqAsc(missionId);
+
+        if (waypoints.isEmpty()) {
+            throw BusinessException.invalid(
+                    "WAYPOINT_REQUIRED",
+                    "Mission phải có ít nhất một Waypoint"
+            );
+        }
+
+        List<MissionNode> missionNodes =
+                missionNodeRepository.findByMission_MissionId(missionId);
+
+        if (missionNodes.isEmpty()) {
+            throw BusinessException.invalid(
+                    "NODE_REQUIRED",
+                    "Mission phải có ít nhất một Sensor Node"
+            );
+        }
+
+        mission.setStatus(MissionStatus.PLANNED);
+
+        Mission saved = missionRepository.save(mission);
+
         return missionMapper.toMissionResponse(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MissionNodeResultResponse> getMissionResults(UUID missionId) {
+
+        missionRepository.findById(missionId)
+                .orElseThrow(() -> BusinessException.notFound("MISSION_NOT_FOUND",
+                        "Mission not found"));
+
+        List<MissionNode> missionNodes =
+                missionNodeRepository.findByMission_MissionId(missionId);
+
+        return missionNodes.stream()
+                .map(node -> MissionNodeResultResponse.builder()
+                        .nodeId(node.getNodeId())
+                        .result(node.getResult())
+                        .recordsCount(node.getRecordsCount())
+                        .attempts(
+                                node.getAttempts() == null
+                                        ? null
+                                        : node.getAttempts().intValue()
+                        )
+                        .collectedAt(node.getCollectedAt())
+                        .errorCode(node.getErrorCode())
+                        .errorMessage(node.getErrorMessage())
+                        .build())
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<MissionStatusLogResponse> getMissionStatusHistory(
+            UUID missionId) {
+
+        missionRepository.findById(missionId)
+                .orElseThrow(() -> new RuntimeException("Mission not found"));
+
+        List<MissionStatusLog> logs =
+                missionStatusLogRepository
+                        .findByMission_MissionIdOrderByCreatedAtAsc(missionId);
+
+        return logs.stream()
+                .map(log -> MissionStatusLogResponse.builder()
+                        .logId(log.getLogId())
+                        .changedBy(log.getChangedBy())
+                        .source(log.getSource())
+                        .oldStatus(log.getOldStatus())
+                        .newStatus(log.getNewStatus())
+                        .note(log.getNote())
+                        .createdAt(log.getCreatedAt())
+                        .build())
+                .toList();
     }
 }
