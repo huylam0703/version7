@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 using OpenTelemetry;
@@ -22,7 +22,8 @@ namespace Farm.BuildingBlocks.Web;
 
 public static class FarmWebExtensions
 {
-    /// configureJwt: cho phép user-auth tự cấu hình khóa nội bộ thay vì gọi chính mình.
+    /// configureJwt: cho phép user-auth dùng khóa nội bộ thay vì gọi chính mình qua JWKS.
+    /// Hàm này chạy SAU cùng nên user-auth phải tự đặt IssuerSigningKeyResolver = null và IssuerSigningKey = khóa công khai.
     public static WebApplicationBuilder AddFarmWeb(
         this WebApplicationBuilder builder, string serviceName,
         Action<JwtBearerOptions>? configureJwt = null)
@@ -31,37 +32,56 @@ public static class FarmWebExtensions
         var config = builder.Configuration;
 
         // 1. JSON theo quy ước: camelCase, enum viết HOA_GẠCH_DƯỚI (InMission -> IN_MISSION)
-        services.AddControllers().AddJsonOptions(o =>
-        {
-            o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-            o.JsonSerializerOptions.Converters.Add(
-                new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper, allowIntegerValues: false));
-        });
+        services.AddControllers()
+            .AddJsonOptions(o =>
+            {
+                o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+                o.JsonSerializerOptions.Converters.Add(
+                    new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper, allowIntegerValues: false));
+            });
 
-        // 2. Lỗi theo RFC 7807 + traceId
+        // 2. Lỗi theo envelope ApiResponse (mục 4 của PLATFORM-CONVENTIONS)
         services.AddProblemDetails(o => o.CustomizeProblemDetails = ctx =>
             ctx.ProblemDetails.Extensions["traceId"] =
                 Activity.Current?.TraceId.ToString() ?? ctx.HttpContext.TraceIdentifier);
         services.AddExceptionHandler<GlobalExceptionHandler>();
 
-        // 3. JWT (role nằm ở claim "role", sub là UserId)
+        // 3. JWT: RS256, khóa lấy từ JWKS của user-auth (AUTH_JWKS_URI), role ở claim "role", sub là UserId
+        var jwksUri = config["AUTH_JWKS_URI"];
+        if (string.IsNullOrWhiteSpace(jwksUri) && configureJwt is null)
+            throw new InvalidOperationException("Thiếu AUTH_JWKS_URI");
+
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(o =>
             {
-                o.MetadataAddress = config["AUTH_METADATA_URI"]
-                    ?? "http://localhost:5001/.well-known/openid-configuration";
-                o.RequireHttpsMetadata = false;           // dev/nội bộ docker; production bật lại
                 o.MapInboundClaims = false;
                 o.TokenValidationParameters = new TokenValidationParameters
                 {
+                    ValidateIssuer = true,
                     ValidIssuer = "farm-auth",
+                    ValidateAudience = true,
                     ValidAudience = "farm-api",
+                    ValidateIssuerSigningKey = true,
+                    RequireSignedTokens = true,
+                    ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
                     NameClaimType = "sub",
                     RoleClaimType = "role",
                     ClockSkew = TimeSpan.FromSeconds(30)
                 };
-                configureJwt?.Invoke(o);
             });
+
+        if (!string.IsNullOrWhiteSpace(jwksUri))
+        {
+            services.AddSingleton(sp =>
+                new JwksKeyResolver(jwksUri, sp.GetRequiredService<ILogger<JwksKeyResolver>>()));
+            services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+                .Configure<JwksKeyResolver>((o, resolver) =>
+                    o.TokenValidationParameters.IssuerSigningKeyResolver = resolver.Resolve);
+        }
+
+        if (configureJwt is not null)
+            services.PostConfigure(JwtBearerDefaults.AuthenticationScheme, configureJwt);
+
         services.AddAuthorization();
 
         // 4. Health

@@ -6,8 +6,25 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Thêm 2 mã lỗi này vào NoWarn -->
+    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
-    <ProjectReference Include="..\UserAuthService.Application\UserAuthService.Application.csproj" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UserAuthService.Domain\UserAuthService.Domain.csproj" />
+    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Abstractions\Farm.BuildingBlocks.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Application\Farm.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Abstractions\Farm.BuildingBlocks.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

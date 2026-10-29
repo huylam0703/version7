@@ -20,8 +20,10 @@ builder.Services.AddGatewayInfrastructure();
 
 var gateway = builder.Configuration.GetSection("Gateway");
 var authEnabled = gateway.GetValue("Auth:Enabled", true);
+if (!authEnabled && !builder.Environment.IsDevelopment())
+    throw new InvalidOperationException("Gateway:Auth:Enabled=false chỉ dùng ở Development");
 
-// Chính sách "authenticated": bật thì bắt buộc đăng nhập; tắt (dev) thì cho qua
+// authenticated
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("authenticated", policy =>
     {
@@ -52,12 +54,12 @@ builder.Services.AddRateLimiter(o =>
     o.OnRejected = async (context, ct) =>
     {
         var http = context.HttpContext;
-        http.Response.StatusCode = StatusCodes.Status429TooManyRequests;  
+        http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
 
-        var body = ApiResponse.Fail(ResultCode.ErrorRateLimited,          
+        var body = ApiResponse.Fail(ResultCode.ErrorRateLimited,
             traceId: Activity.Current?.TraceId.ToString());
 
-        await http.Response.WriteAsJsonAsync(body, FarmJson.Options, "application/json", ct); 
+        await http.Response.WriteAsJsonAsync(body, FarmJson.Options, "application/json", ct);
     };
 });
 
@@ -68,8 +70,8 @@ var app = builder.Build();
 
 app.UseCors("web");
 app.UseRateLimiter();
-app.UseFarmWeb();        // bắt lỗi, xác thực, phân quyền, /health/live và /health/ready
-app.MapControllers();    // endpoint riêng của gateway (/api/v1/gateway/...)
-app.MapReverseProxy();   // chuyển tiếp theo các route đã khai báo
+app.UseFarmWeb();       
+app.MapControllers();    
+app.MapReverseProxy();
 
 app.Run();

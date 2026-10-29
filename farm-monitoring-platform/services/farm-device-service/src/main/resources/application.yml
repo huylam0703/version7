@@ -9,4 +9,4 @@ spring:
     password: ${DB_PASSWORD:1234}
 
 server:
-  port: ${SERVER_PORT:5002}
+  port: ${SERVER_PORT:8082}
