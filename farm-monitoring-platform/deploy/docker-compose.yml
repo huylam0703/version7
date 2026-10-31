@@ -1,56 +1,149 @@
-name: farm-monitoring-platform
+name: farm-monitoring
+
+x-dotnet-build: &dotnet-build
+  context: ..
+  dockerfile: deploy/docker/dotnet.Dockerfile
+
+x-java-build: &java-build
+  context: ..
+  dockerfile: deploy/docker/java.Dockerfile
+
+x-wait-db: &wait-db
+  db-init: { condition: service_completed_successfully }
 
 services:
+  # ================= Hạ tầng =================
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${SA_PASSWORD}
-    ports:
-      - "1433:1433"
-    volumes:
-      - sqldata:/var/opt/mssql
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports: ["1433:1433"]
+    volumes: [sqldata:/var/opt/mssql]
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      test: /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -Q "SELECT 1" || exit 1
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
 
-  # Chạy một lần để tạo 6 database
   db-init:
     image: mcr.microsoft.com/mssql/server:2022-latest
     depends_on:
-      sqlserver:
-        condition: service_healthy
+      sqlserver: { condition: service_healthy }
     environment:
-      SA_PASSWORD: ${SA_PASSWORD}
-    volumes:
-      - ./db/init:/init:ro
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        for f in /init/*.sql; do
-          echo "Chạy $$f";
-          /opt/mssql-tools18/bin/sqlcmd -C -S sqlserver -U sa -P "$$SA_PASSWORD" -i "$$f" || exit 1;
-        done
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    volumes: ["./sql:/sql:ro"]
     restart: "no"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        for f in /sql/*.sql; do
+          echo "Running $$f"
+          /opt/mssql-tools18/bin/sqlcmd -C -S sqlserver -U sa -P "$$MSSQL_SA_PASSWORD" -b -i "$$f"
+        done
 
-  # ---- Mẫu cho một service (bỏ comment và sửa khi đã có Dockerfile) ----
-  # user-auth:
-  #   build: ./services/user-auth
-  #   profiles: ["dotnet"]
-  #   depends_on:
-  #     db-init:
-  #       condition: service_completed_successfully
+  # ================= .NET (3 service) =================
+  user-auth-service:
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT_PATH: services/UserAuthService.Api/UserAuthService.Api/UserAuthService.Api.csproj
+        DLL_NAME: UserAuthService.Api.dll
+    depends_on: *wait-db
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "Server=sqlserver;Database=user_auth_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+    volumes: ["../keys:/app/keys:ro"]
+    ports: ["8081:8080"]
+
+  # notification-service:
+  #   build:
+  #     <<: *dotnet-build
+  #     args:
+  #       PROJECT_PATH: services/notification-service/src/NotificationService.Api
+  #       DLL_NAME: NotificationService.Api.dll
+  #   depends_on: *wait-db
   #   environment:
-  #     ConnectionStrings__Default: "Server=sqlserver;Database=user_auth_db;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True"
-  #     Jwt__Issuer: ${JWT_ISSUER}
-  #     Jwt__Audience: ${JWT_AUDIENCE}
-  #   volumes:
-  #     - ./keys:/keys:ro
-  #   ports:
-  #     - "8081:8080"
+  #     ASPNETCORE_ENVIRONMENT: Development
+  #     ConnectionStrings__Default: "Server=sqlserver;Database=notification_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+  #   ports: ["8086:8080"]
+
+  api-gateway:
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT_PATH: services/ApiGatewayService.Api/ApiGatewayService.Api/ApiGatewayService.Api.csproj
+        DLL_NAME: ApiGatewayService.Api.dll
+    depends_on:
+      - user-auth-service
+      # - farm-device-service
+      # - mission-service
+      # - sensor-data-service
+      # - alert-service
+      # - notification-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
+      Gateway__Cors__Origins__0: http://localhost:3000
+      Gateway__Cors__Origins__1: http://localhost:5173
+      ReverseProxy__Clusters__user-auth__Destinations__d1__Address: http://user-auth-service:8080/
+      ReverseProxy__Clusters__farm-device__Destinations__d1__Address: http://farm-device-service:8080/
+      ReverseProxy__Clusters__mission__Destinations__d1__Address: http://mission-service:8080/
+      ReverseProxy__Clusters__sensor-data__Destinations__d1__Address: http://sensor-data-service:8080/
+      ReverseProxy__Clusters__alert__Destinations__d1__Address: http://alert-service:8080/
+      ReverseProxy__Clusters__notification__Destinations__d1__Address: http://notification-service:8080/
+    ports: ["5000:8080"]
+
+  # ================= Java (4 service) =================
+  # farm-device-service:
+  #   build:
+  #     <<: *java-build
+  #     args:
+  #       SERVICE_PATH: services/farm-device-service
+  #   depends_on: *wait-db
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=farm_device_db;encrypt=true;trustServerCertificate=true
+  #     SPRING_DATASOURCE_USERNAME: sa
+  #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+  #   ports: ["8082:8080"]
+
+  # mission-service:
+  #   build:
+  #     <<: *java-build
+  #     args:
+  #       SERVICE_PATH: services/mission-service
+  #   depends_on: *wait-db
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=mission_db;encrypt=true;trustServerCertificate=true
+  #     SPRING_DATASOURCE_USERNAME: sa
+  #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+  #   ports: ["8083:8080"]
+
+  # sensor-data-service:
+  #   build:
+  #     <<: *java-build
+  #     args:
+  #       SERVICE_PATH: services/sensor-data-service
+  #   depends_on: *wait-db
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=sensor_data_db;encrypt=true;trustServerCertificate=true
+  #     SPRING_DATASOURCE_USERNAME: sa
+  #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+  #   ports: ["8084:8080"]
+
+  # alert-service:
+  #   build:
+  #     <<: *java-build
+  #     args:
+  #       SERVICE_PATH: services/alert-service
+  #   depends_on: *wait-db
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=alert_db;encrypt=true;trustServerCertificate=true
+  #     SPRING_DATASOURCE_USERNAME: sa
+  #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+  #   ports: ["8085:8080"]
 
 volumes:
   sqldata:

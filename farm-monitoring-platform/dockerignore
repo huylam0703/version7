@@ -1,0 +1,10 @@
+**/bin
+**/obj
+**/node_modules
+**/target
+.git
+.github
+.idea
+.vs
+keys
+deploy/.env
