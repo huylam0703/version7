@@ -14,3 +14,10 @@ farm:
 logging:
   level:
     org.hibernate.SQL: debug
+springdoc:
+  api-docs:
+    enabled: true
+    path: /openapi.json
+  swagger-ui:
+    enabled: true
+    path: /swagger

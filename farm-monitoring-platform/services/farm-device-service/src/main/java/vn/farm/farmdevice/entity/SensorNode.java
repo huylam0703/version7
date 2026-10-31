@@ -13,7 +13,7 @@ import org.hibernate.annotations.Nationalized;
 import vn.farm.starter.jpa.AuditableEntity;
 
 @Entity
-@Table(name = "dbo_FD_SensorNodes",
+@Table(name = "SensorNodes",
         uniqueConstraints = @UniqueConstraint(name = "UQ_FD_SensorNodes_DeviceUid", columnNames = "DeviceUid"),
         indexes = @Index(name = "IX_FD_SensorNodes_ZoneId", columnList = "ZoneId"))
 @Getter

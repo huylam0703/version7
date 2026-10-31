@@ -17,9 +17,9 @@ import vn.farm.farmdevice.dto.SensorDtos.UpdateNodeRequest;
 import vn.farm.farmdevice.entity.NodeStatus;
 import vn.farm.farmdevice.service.SensorNodeService;
 
-/** Route theo workbook API (/sensor-nodes). PLATFORM-CONVENTIONS ghi /nodes: cần chốt với nhóm. */
+/** Route theo PLATFORM-CONVENTIONS §8: /api/v1/nodes. */
 @RestController
-@RequestMapping("/api/v1/sensor-nodes")
+@RequestMapping("/api/v1/nodes")
 @RequiredArgsConstructor
 public class SensorNodeController {
     private final SensorNodeService service;

@@ -11,7 +11,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 /** Bảng dbo_FD_Gateways chỉ có CreatedAt (không có UpdatedAt) nên không kế thừa AuditableEntity. */
 @Entity
-@Table(name = "dbo_FD_Gateways",
+@Table(name = "Gateways",
         uniqueConstraints = @UniqueConstraint(name = "UQ_FD_Gateways_GatewayUid", columnNames = "GatewayUid"))
 @EntityListeners(AuditingEntityListener.class)
 @Getter
