@@ -9,7 +9,7 @@ import org.hibernate.annotations.Nationalized;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "dbo_FD_SensorTypes")
+@Table(name = "SensorTypes")
 @Getter
 @Setter
 public class SensorType {
