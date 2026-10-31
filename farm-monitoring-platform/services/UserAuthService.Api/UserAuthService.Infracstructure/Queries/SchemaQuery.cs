@@ -7,7 +7,7 @@ namespace UserAuthService.Infracstructure.Queries;
 public static class SchemaQuery
 {
     /// <summary>
-    /// Tạo mới 2 bảng nếu chưa được tạo
+    /// Tạo mới 3 bảng nếu chưa được tạo
     /// </summary>
     public const string CreateTables = @"
         IF OBJECT_ID(N'UA_Roles', N'U') IS NULL
@@ -42,12 +42,30 @@ public static class SchemaQuery
                 CONSTRAINT CK_UA_Users_Status CHECK (Status IN ('ACTIVE','LOCKED'))
             );
 
-        END;";
+        END;
+
+        IF OBJECT_ID(N'UA_RefreshTokens', N'U') IS NULL
+        BEGIN
+            CREATE TABLE UA_RefreshTokens (
+                TokenId     UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+                UserId      UNIQUEIDENTIFIER NOT NULL,
+                TokenHash   VARCHAR(64)      NOT NULL,  
+                ExpiresAt   DATETIME2(0)     NOT NULL,
+                CreatedAt   DATETIME2(0)     NOT NULL DEFAULT SYSUTCDATETIME(),
+                RevokedAt   DATETIME2(0)     NULL,      
+                CONSTRAINT PK_UA_RefreshTokens PRIMARY KEY (TokenId),
+                CONSTRAINT UQ_UA_RefreshTokens_TokenHash UNIQUE (TokenHash),
+                CONSTRAINT FK_UA_RefreshTokens_Users FOREIGN KEY (UserId) REFERENCES UA_Users(UserId)
+            );
+            CREATE INDEX IX_UA_RefreshTokens_UserId ON UA_RefreshTokens (UserId, RevokedAt)
+
+        END;
+    ";
 
     /// <summary>
     /// Thêm role
     /// </summary>
     public const string SeedRole = @"
-        IF NOT EXISTS (SELECT 1 FROM dbo_UA_Roles WHERE Name = @pName)
-            INSERT INTO dbo_UA_Roles (RoleId, Name, Description) VALUES (@pRoleId, @pName, @pDescription);";
+        IF NOT EXISTS (SELECT 1 FROM UA_Roles WHERE Name = @pName)
+            INSERT INTO UA_Roles (RoleId, Name, Description) VALUES (@pRoleId, @pName, @pDescription);";
 }

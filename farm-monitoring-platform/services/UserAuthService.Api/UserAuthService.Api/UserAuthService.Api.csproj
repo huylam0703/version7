@@ -12,13 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Controllers\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\UserAuthService.Application\UserAuthService.Application.csproj" />
     <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Abstractions\Farm.BuildingBlocks.Abstractions.csproj" />
     <ProjectReference Include="..\UserAuthService.Infracstructure\UserAuthService.Infracstructure.csproj" />
+    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Web\Farm.BuildingBlocks.Web.csproj" />
   </ItemGroup>
 
 </Project>

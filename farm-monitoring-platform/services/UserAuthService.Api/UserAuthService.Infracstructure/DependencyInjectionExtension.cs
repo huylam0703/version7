@@ -36,6 +36,8 @@ public static class DependencyInjectionExtension
         services.AddSingleton<IJwtService, JwtService>();
         services.AddSingleton<IHashUtilities, HashUtilities>();
         services.AddSingleton<IServiceClientStore, ConfigServiceClientStore>();
+        services.AddSingleton<IRefreshTokenService, RefreshTokenService>();
+        services.AddScoped<DbInitializer>();
 
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IUnitOfWork, NoOpUnitOfWork>();
@@ -44,6 +46,11 @@ public static class DependencyInjectionExtension
         return services;
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="app"></param>
+    /// <returns></returns>
     public static IApplicationBuilder UseCorePackageBuilder(this IApplicationBuilder app)
     {
         var serviceProvider = app.ApplicationServices.GetRequiredService<IServiceProvider>();
@@ -51,5 +58,16 @@ public static class DependencyInjectionExtension
 
 
         return app;
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="services"></param>
+    /// <returns></returns>
+    public static async Task InitializeUserAuthDatabaseAsync(this IServiceProvider services)
+    {
+        await using var scope = services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<DbInitializer>().RunAsync();
     }
 }

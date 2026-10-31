@@ -18,7 +18,9 @@ public sealed record GetUserDto(
 
 public sealed record AdminDto(Guid UserId, string FullName, string Email);
 
-public sealed record LoginResponse(string AccessToken, string TokenType, int ExpiresIn, GetUserDto User);
+public sealed record LoginResponse(string AccessToken, string TokenType, int ExpiresIn,
+    string RefreshToken, DateTime RefreshTokenExpiresAt,
+    GetUserDto User);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, long Total);
 

@@ -51,10 +51,7 @@ public class JwtService : IJwtService
                 ["role"] = user.RoleName,
                 ["jti"] = Guid.NewGuid().ToString()
             },
-            TimeSpan.FromMinutes(
-                _options.Value.Jwt!.ExpireTime > 0
-                    ? _options.Value.Jwt!.ExpireTime
-                    : 10080));
+            TimeSpan.FromMinutes(_options.Value.Jwt!.ExpireTime > 0 ? _options.Value.Jwt!.ExpireTime : 30));
 
     /// <summary>
     /// 

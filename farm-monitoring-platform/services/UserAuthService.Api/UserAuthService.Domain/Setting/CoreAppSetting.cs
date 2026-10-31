@@ -42,7 +42,11 @@ public class JwtSetting
     /// <summary>
     /// Thời gian sống của token (mặc định là 7 ngày)
     /// </summary>
-    public double ExpireTime { get; set; } = 10080;
+    public double ExpireTime { get; set; } = 30;// phút, access token
+    /// <summary>
+    /// Thời gian sống của refresh
+    /// </summary>
+    public int RefreshTokenExpireDays { get; set; } = 7;
     /// <summary>
     /// Thời hạn của token service gọi service
     /// </summary>
@@ -54,7 +58,6 @@ public class JwtSetting
     /// <summary>
     /// 
     /// </summary>
-
     public string? KeyId { get; set; }
 }
 

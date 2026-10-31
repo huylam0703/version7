@@ -21,6 +21,10 @@ public static class UserAuthErrors
     /// <summary>
     /// 
     /// </summary>
+    public const string PhoneExists = "PHONE_EXISTS";
+    /// <summary>
+    /// 
+    /// </summary>
     public const string UserNotFound = "USER_NOT_FOUND";
     /// <summary>
     /// 
