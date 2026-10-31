@@ -18,7 +18,7 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
-    ports: ["1433:1433"]
+    ports: ["14330:1433"]
     volumes: [sqldata:/var/opt/mssql]
     healthcheck:
       test: /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -Q "SELECT 1" || exit 1
@@ -46,6 +46,7 @@ services:
 
   # ================= .NET (3 service) =================
   user-auth-service:
+    entrypoint: ["dotnet", "UserAuthService.Api.dll"]
     build:
       <<: *dotnet-build
       args:
@@ -54,7 +55,7 @@ services:
     depends_on: *wait-db
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__Default: "Server=sqlserver;Database=user_auth_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+      CoreAppSetting__ConnectionStringSetting__UserAuthService: "Server=sqlserver;Database=user_auth_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};MultipleActiveResultSets=true;TrustServerCertificate=True"
     volumes: ["../keys:/app/keys:ro"]
     ports: ["8081:8080"]
 
@@ -71,6 +72,7 @@ services:
   #   ports: ["8086:8080"]
 
   api-gateway:
+    entrypoint: ["dotnet", "ApiGatewayService.Api.dll"]
     build:
       <<: *dotnet-build
       args:
