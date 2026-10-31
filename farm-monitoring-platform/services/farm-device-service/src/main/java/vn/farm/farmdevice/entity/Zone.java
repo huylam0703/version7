@@ -9,7 +9,7 @@ import org.hibernate.annotations.Nationalized;
 import vn.farm.starter.jpa.AuditableEntity;
 
 @Entity
-@Table(name = "dbo_FD_Zones",
+@Table(name = "Zones",
         uniqueConstraints = @UniqueConstraint(name = "UQ_FD_Zones_Farm_Code", columnNames = {"FarmId", "Code"}))
 @Getter
 @Setter
