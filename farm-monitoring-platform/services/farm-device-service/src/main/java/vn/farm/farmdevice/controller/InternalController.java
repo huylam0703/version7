@@ -19,7 +19,7 @@ import vn.farm.farmdevice.service.InternalLookupService;
 public class InternalController {
     private final InternalLookupService service;
 
-    @GetMapping("/sensor-nodes/by-device-uid/{deviceUid}")
+    @GetMapping("/nodes/by-device-uid/{deviceUid}")
     public InternalNode nodeByDeviceUid(@PathVariable String deviceUid) {
         return service.nodeByDeviceUid(deviceUid);
     }
