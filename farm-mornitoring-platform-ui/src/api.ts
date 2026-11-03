@@ -68,7 +68,7 @@ export const reportApi = {
 export const userApi = {
   list: () => mockApi.users.list(),
   create: (body: Partial<User> & { password?: string }) => mockApi.users.create(body),
-  update: (id: string, body: Partial<User>) => mockApi.users.create({ ...body, id }),
+  update: (userId: string, body: Partial<User>) => mockApi.users.create({ ...body, userId }),
 }
 
 export const accountApi = {

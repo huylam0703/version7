@@ -30,11 +30,11 @@ function HomeRedirect() {
 }
 
 function Admin({ children }: { children: ReactNode }) {
-  return <RoleRoute roles={['FarmAdministrator']}>{children}</RoleRoute>
+  return <RoleRoute roles={['ADMIN']}>{children}</RoleRoute>
 }
 
 function Operator({ children }: { children: ReactNode }) {
-  return <RoleRoute roles={['UavOperator']}>{children}</RoleRoute>
+  return <RoleRoute roles={['OPERATOR']}>{children}</RoleRoute>
 }
 
 export default function App() {

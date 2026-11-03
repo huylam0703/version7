@@ -31,24 +31,24 @@ import { formatDate } from '../helpers'
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; roles: UserRole[]; group: string }
 
 const NAV: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['FarmAdministrator'], group: 'Overview' },
-  { to: '/farms', label: 'Farm management', icon: LandPlot, roles: ['FarmAdministrator'], group: 'Farm' },
-  { to: '/zones', label: 'Zone management', icon: Map, roles: ['FarmAdministrator'], group: 'Farm' },
-  { to: '/sensors/monitor', label: 'Sensor monitoring', icon: Activity, roles: ['FarmAdministrator'], group: 'Sensors' },
-  { to: '/sensors/history', label: 'Sensor history', icon: History, roles: ['FarmAdministrator'], group: 'Sensors' },
-  { to: '/sensors/compare', label: 'Data comparison', icon: GitCompare, roles: ['FarmAdministrator'], group: 'Sensors' },
-  { to: '/alerts', label: 'Alert management', icon: TriangleAlert, roles: ['FarmAdministrator'], group: 'Alerts' },
-  { to: '/alerts/thresholds', label: 'Alert thresholds', icon: SlidersHorizontal, roles: ['FarmAdministrator'], group: 'Alerts' },
-  { to: '/reports', label: 'Reports', icon: FileBarChart, roles: ['FarmAdministrator'], group: 'Admin' },
-  { to: '/users', label: 'User management', icon: Users, roles: ['FarmAdministrator'], group: 'Admin' },
-  { to: '/operator', label: 'Operator dashboard', icon: LayoutDashboard, roles: ['UavOperator'], group: 'Overview' },
-  { to: '/nodes', label: 'Sensor nodes', icon: Radio, roles: ['UavOperator'], group: 'Equipment' },
-  { to: '/uavs', label: 'UAVs', icon: Plane, roles: ['UavOperator'], group: 'Equipment' },
-  { to: '/gateways', label: 'Mobile gateways', icon: Router, roles: ['UavOperator'], group: 'Equipment' },
-  { to: '/missions', label: 'Missions', icon: Waypoints, roles: ['UavOperator'], group: 'Missions' },
-  { to: '/missions/new', label: 'Create mission', icon: Plus, roles: ['UavOperator'], group: 'Missions' },
-  { to: '/notifications', label: 'Notifications', icon: Bell, roles: ['FarmAdministrator', 'UavOperator'], group: 'Account' },
-  { to: '/settings', label: 'Account settings', icon: Settings, roles: ['FarmAdministrator', 'UavOperator'], group: 'Account' },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN'], group: 'Overview' },
+  { to: '/farms', label: 'Farm management', icon: LandPlot, roles: ['ADMIN'], group: 'Farm' },
+  { to: '/zones', label: 'Zone management', icon: Map, roles: ['ADMIN'], group: 'Farm' },
+  { to: '/sensors/monitor', label: 'Sensor monitoring', icon: Activity, roles: ['ADMIN'], group: 'Sensors' },
+  { to: '/sensors/history', label: 'Sensor history', icon: History, roles: ['ADMIN'], group: 'Sensors' },
+  { to: '/sensors/compare', label: 'Data comparison', icon: GitCompare, roles: ['ADMIN'], group: 'Sensors' },
+  { to: '/alerts', label: 'Alert management', icon: TriangleAlert, roles: ['ADMIN'], group: 'Alerts' },
+  { to: '/alerts/thresholds', label: 'Alert thresholds', icon: SlidersHorizontal, roles: ['ADMIN'], group: 'Alerts' },
+  { to: '/reports', label: 'Reports', icon: FileBarChart, roles: ['ADMIN'], group: 'Admin' },
+  { to: '/users', label: 'User management', icon: Users, roles: ['ADMIN'], group: 'Admin' },
+  { to: '/operator', label: 'Operator dashboard', icon: LayoutDashboard, roles: ['OPERATOR'], group: 'Overview' },
+  { to: '/nodes', label: 'Sensor nodes', icon: Radio, roles: ['OPERATOR'], group: 'Equipment' },
+  { to: '/uavs', label: 'UAVs', icon: Plane, roles: ['OPERATOR'], group: 'Equipment' },
+  { to: '/gateways', label: 'Mobile gateways', icon: Router, roles: ['OPERATOR'], group: 'Equipment' },
+  { to: '/missions', label: 'Missions', icon: Waypoints, roles: ['OPERATOR'], group: 'Missions' },
+  { to: '/missions/new', label: 'Create mission', icon: Plus, roles: ['OPERATOR'], group: 'Missions' },
+  { to: '/notifications', label: 'Notifications', icon: Bell, roles: ['ADMIN', 'OPERATOR'], group: 'Account' },
+  { to: '/settings', label: 'Account settings', icon: Settings, roles: ['ADMIN', 'OPERATOR'], group: 'Account' },
 ]
 
 function crumbs(path: string) {
@@ -231,7 +231,7 @@ export function AppLayout() {
               </div>
               <div className="hidden text-left lg:block">
                 <p className="text-sm font-medium">{user.fullName}</p>
-                <p className="text-xs text-stone-500">{user.role === 'UavOperator' ? 'UAV Operator' : 'Farm Administrator'}</p>
+                <p className="text-xs text-stone-500">{user.role === 'OPERATOR' ? 'UAV Operator' : 'Farm Administrator'}</p>
               </div>
             </button>
             {menuOpen ? (

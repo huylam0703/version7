@@ -1,19 +1,36 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import type { User, UserRole } from './types'
+
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
+
+import { authApi } from './api/authApi'
+import type { User } from './types/auth'
 
 type AuthContextValue = {
   user: User | null
   token: string | null
   loading: boolean
-  login: (email: string, password: string, remember: boolean, role?: UserRole) => Promise<void>
+  login: (
+    email: string,
+    password: string,
+    remember: boolean
+  ) => Promise<User>
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function readStoredUser() {
-  const raw = localStorage.getItem('user') || sessionStorage.getItem('user')
+function readStoredUser(): User | null {
+  const raw =
+    localStorage.getItem('user') ||
+    sessionStorage.getItem('user')
+
   if (!raw) return null
+
   try {
     return JSON.parse(raw) as User
   } catch {
@@ -21,40 +38,46 @@ function readStoredUser() {
   }
 }
 
+function readStoredToken(): string | null {
+  return (
+    localStorage.getItem('token') ||
+    sessionStorage.getItem('token')
+  )
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(readStoredUser)
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem('token') || sessionStorage.getItem('token'),
-  )
+  const [token, setToken] = useState<string | null>(readStoredToken)
   const [loading, setLoading] = useState(false)
 
-  async function login(email: string, password: string, remember: boolean, role: UserRole = 'FarmAdministrator') {
+  async function login(
+    email: string,
+    password: string,
+    remember: boolean
+  ): Promise<User> {
     setLoading(true)
 
     try {
-      void password
-      const data = {
-        token: 'mock-access-token',
-        user: {
-          id: '1',
-          fullName: role === 'UavOperator' ? 'Minh Tran' : 'System Administrator',
-          email,
-          role,
-          // role: 'UavOperator' as UserRole
-        },
-      }
+      const response = await authApi.login({
+        email,
+        password,
+      })
 
       const storage = remember ? localStorage : sessionStorage
-
-      storage.setItem('token', data.token)
-      storage.setItem('user', JSON.stringify(data.user))
-
       const other = remember ? sessionStorage : localStorage
+
+      storage.setItem('token', response.accessToken)
+      storage.setItem('refreshToken', response.refreshToken)
+      storage.setItem('user', JSON.stringify(response.user))
+
       other.removeItem('token')
+      other.removeItem('refreshToken')
       other.removeItem('user')
 
-      setToken(data.token)
-      setUser(data.user)
+      setToken(response.accessToken)
+      setUser(response.user)
+
+      return response.user
     } finally {
       setLoading(false)
     }
@@ -62,24 +85,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     localStorage.removeItem('token')
+    localStorage.removeItem('refreshToken')
     localStorage.removeItem('user')
+
     sessionStorage.removeItem('token')
+    sessionStorage.removeItem('refreshToken')
     sessionStorage.removeItem('user')
+
     setToken(null)
     setUser(null)
   }
 
-  const value = useMemo(() => ({ user, token, loading, login, logout }), [user, token, loading])
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      loading,
+      login,
+      logout,
+    }),
+    [user, token, loading]
+  )
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export function useAuth() {
   const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used inside AuthProvider')
+
+  if (!ctx) {
+    throw new Error('useAuth must be used inside AuthProvider')
+  }
+
   return ctx
 }
 
-export function homePathByRole(role?: UserRole) {
-  return role === 'UavOperator' ? '/operator' : '/dashboard'
+export function homePathByRole(role?: User['role']) {
+  return role === 'OPERATOR'
+    ? '/operator'
+    : '/dashboard'
 }

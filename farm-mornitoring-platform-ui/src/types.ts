@@ -1,16 +1,24 @@
 // Role khớp với backend. Đổi string nếu backend dùng tên khác.
-export type UserRole = 'FarmAdministrator' | 'UavOperator'
+export type UserRole = 'ADMIN' | 'OPERATOR'
 
 export type User = {
-  id: string
-  email: string
+  userId: string
   fullName: string
+  email: string
+  phone: string | null
   role: UserRole
-  phone?: string
+  status: string
+  lastLoginAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export type LoginResponse = {
-  token: string
+  accessToken: string
+  tokenType: string
+  expiresIn: number
+  refreshToken: string
+  refreshTokenExpiresAt: string
   user: User
 }
 
