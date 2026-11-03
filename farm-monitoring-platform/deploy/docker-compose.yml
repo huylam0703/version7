@@ -59,17 +59,19 @@ services:
     volumes: ["../keys:/app/keys:ro"]
     ports: ["8081:8080"]
 
-  # notification-service:
-  #   build:
-  #     <<: *dotnet-build
-  #     args:
-  #       PROJECT_PATH: services/notification-service/src/NotificationService.Api
-  #       DLL_NAME: NotificationService.Api.dll
-  #   depends_on: *wait-db
-  #   environment:
-  #     ASPNETCORE_ENVIRONMENT: Development
-  #     ConnectionStrings__Default: "Server=sqlserver;Database=notification_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
-  #   ports: ["8086:8080"]
+  
+  notification-service:
+    entrypoint: ["dotnet", "NotificationService.Api.dll"]
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT_PATH: services/notification-service/NotificationService.Api/NotificationService.Api.csproj
+        DLL_NAME: NotificationService.Api.dll
+    depends_on: *wait-db
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "Server=sqlserver;Database=notification_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+    ports: ["8086:8080"]
 
   api-gateway:
     entrypoint: ["dotnet", "ApiGatewayService.Api.dll"]
@@ -84,7 +86,7 @@ services:
       # - mission-service
       # - sensor-data-service
       # - alert-service
-      # - notification-service
+      - notification-service
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
