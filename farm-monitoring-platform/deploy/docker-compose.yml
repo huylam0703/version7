@@ -116,11 +116,23 @@ services:
   #     <<: *java-build
   #     args:
   #       SERVICE_PATH: services/mission-service
-  #   depends_on: *wait-db
+  #   depends_on: 
+  #     <<: *wait-db
+  #     rabbitmq:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
   #   environment:
   #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=mission_db;encrypt=true;trustServerCertificate=true
   #     SPRING_DATASOURCE_USERNAME: sa
   #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+  #     SPRING_RABBITMQ_HOST: rabbitmq
+  #     SPRING_RABBITMQ_PORT: 5672
+  #     SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+  #     SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+  #     SPRING_DATA_REDIS_HOST: redis
+  #     SPRING_DATA_REDIS_PORT: 6379
+  #     SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
   #   ports: ["8083:8080"]
 
   # sensor-data-service:
