@@ -1,0 +1,50 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@theme {
+  --font-sans: "Manrope", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --color-brand: #c45c26;
+  --color-brand-dark: #9a3412;
+  --color-brand-soft: #f8e7da;
+  --color-ink: #1c1917;
+  --color-canvas: #f3efe8;
+  --color-surface: #fffdfb;
+  --color-line: #e6dfd4;
+  --color-muted: #78716c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  border-radius: 16px;
+  z-index: 0;
+  font-family: inherit;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+::selection {
+  background: #f3d3bf;
+}
