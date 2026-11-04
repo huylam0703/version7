@@ -1,0 +1,18 @@
+
+server:
+  port: 8084
+
+spring:
+  application:
+    name: sensor-data-service
+
+  datasource:
+    url: jdbc:sqlserver://localhost:1433;databaseName=sensor_data_db;encrypt=true;trustServerCertificate=true
+    username: sa
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
