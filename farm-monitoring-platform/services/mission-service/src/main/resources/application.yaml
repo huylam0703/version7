@@ -39,3 +39,10 @@ springdoc:
     path: /swagger-ui.html
     operations-sorter: method
     tags-sorter: alpha
+
+integration:
+  farm-device:
+    base-url: ${FARM_DEVICE_BASE_URL:http://localhost:8082}
+mission:
+  reference-validation:
+    mode: ${MISSION_REFERENCE_VALIDATION_MODE:remote}
