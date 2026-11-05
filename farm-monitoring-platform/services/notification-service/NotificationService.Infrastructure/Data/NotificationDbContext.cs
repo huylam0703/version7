@@ -1,8 +1,8 @@
 
 using Microsoft.EntityFrameworkCore;
-using NotificationService.Api.Models;
+using NotificationService.Domain.Entities;
 
-namespace NotificationService.Api.Data;
+namespace NotificationService.Infrastructure.Data;
 
 public class NotificationDbContext : DbContext
 {

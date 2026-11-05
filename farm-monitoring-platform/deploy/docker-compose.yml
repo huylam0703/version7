@@ -58,8 +58,6 @@ services:
       CoreAppSetting__ConnectionStringSetting__UserAuthService: "Server=sqlserver;Database=user_auth_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};MultipleActiveResultSets=true;TrustServerCertificate=True"
     volumes: ["../keys:/app/keys:ro"]
     ports: ["8081:8080"]
-
-  
   notification-service:
     entrypoint: ["dotnet", "NotificationService.Api.dll"]
     build:
@@ -67,11 +65,19 @@ services:
       args:
         PROJECT_PATH: services/notification-service/NotificationService.Api/NotificationService.Api.csproj
         DLL_NAME: NotificationService.Api.dll
-    depends_on: *wait-db
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      user-auth-service:
+        condition: service_started
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: "Server=sqlserver;Database=notification_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+      Jwt__Issuer: "farm-auth"
+      Jwt__Audience: "farm-api"
+      Jwt__MetadataAddress: "http://user-auth-service:8080/.well-known/openid-configuration"
     ports: ["8086:8080"]
+
 
   api-gateway:
     entrypoint: ["dotnet", "ApiGatewayService.Api.dll"]

@@ -1,16 +1,27 @@
 
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using NotificationService.Api.Data;
+using Microsoft.IdentityModel.Tokens;
+using NotificationService.Infrastructure;
+using NotificationService.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Đăng ký Controllers
-builder.Services.AddControllers();
+// ========================================
+// 1. Đăng ký Dependency Injection
+// ========================================
 
-// 2. Đăng ký OpenAPI
+// Đăng ký các service của Notification
+builder.Services.AddInfrastructureService();
+
+// Đăng ký Controllers và OpenAPI
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
-// 3. Đăng ký Entity Framework Core với SQL Server
+// ========================================
+// 2. Cấu hình SQL Server
+// ========================================
+
 var connectionString =
     builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException(
@@ -19,22 +30,77 @@ var connectionString =
 builder.Services.AddDbContext<NotificationDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-// 4. Khởi tạo ứng dụng
+// ========================================
+// 3. Cấu hình JWT Authentication
+// ========================================
+
+var jwt = builder.Configuration.GetSection("Jwt");
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MetadataAddress = jwt["MetadataAddress"]
+            ?? throw new InvalidOperationException(
+                "Chưa cấu hình Jwt:MetadataAddress");
+
+        // Chỉ sử dụng HTTP trong môi trường Development
+        options.RequireHttpsMetadata = false;
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwt["Issuer"],
+
+            ValidateAudience = true,
+            ValidAudience = jwt["Audience"],
+
+            ValidateLifetime = true,
+
+            ValidateIssuerSigningKey = true,
+
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
+// ========================================
+// 4. Cấu hình Authorization
+// ========================================
+
+builder.Services.AddAuthorization();
+
+// ========================================
+// 5. Build ứng dụng
+// ========================================
+
 var app = builder.Build();
 
-// 5. OpenAPI trong môi trường Development
+// ========================================
+// 6. OpenAPI
+// ========================================
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-// 6. Chỉ bật HTTPS khi đã cấu hình chứng chỉ
-// app.UseHttpsRedirection();
+// ========================================
+// 7. Middleware
+// ========================================
 
-// 7. Ánh xạ Controllers
+app.UseAuthentication();
+app.UseAuthorization();
+
+// ========================================
+// 8. Map Controllers
+// ========================================
+
 app.MapControllers();
 
-// 8. API kiểm tra Notification Service
+// ========================================
+// 9. Health Check
+// ========================================
+
 app.MapGet("/health", () =>
 {
     return Results.Ok(new
@@ -45,5 +111,8 @@ app.MapGet("/health", () =>
     });
 });
 
-// 9. Chạy ứng dụng
+// ========================================
+// 10. Chạy ứng dụng
+// ========================================
+
 app.Run();
