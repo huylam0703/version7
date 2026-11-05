@@ -4,6 +4,7 @@ import {
   useContext,
   useMemo,
   useState,
+  useCallback,
   type ReactNode,
 } from 'react'
 
@@ -19,7 +20,7 @@ type AuthContextValue = {
     password: string,
     remember: boolean
   ) => Promise<User>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -50,11 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(readStoredToken)
   const [loading, setLoading] = useState(false)
 
-  async function login(
+  const login = useCallback(async (
     email: string,
     password: string,
     remember: boolean
-  ): Promise<User> {
+  ): Promise<User> => {
     setLoading(true)
 
     try {
@@ -81,20 +82,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  function logout() {
-    localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
-    localStorage.removeItem('user')
+  const logout = useCallback(async (): Promise<void> => {
+    const refreshToken =
+      localStorage.getItem('refreshToken') ||
+      sessionStorage.getItem('refreshToken')
 
-    sessionStorage.removeItem('token')
-    sessionStorage.removeItem('refreshToken')
-    sessionStorage.removeItem('user')
+    try {
+      // Thu hồi Refresh Token ở Backend
+      if (refreshToken) {
+        await authApi.logout(refreshToken)
+      }
+    } catch (error) {
+      console.error('Không thể thu hồi Refresh Token:', error)
+    } finally {
+      // Luôn xóa dữ liệu đăng nhập ở Frontend
+      localStorage.removeItem('token')
+      localStorage.removeItem('refreshToken')
+      localStorage.removeItem('user')
 
-    setToken(null)
-    setUser(null)
-  }
+      sessionStorage.removeItem('token')
+      sessionStorage.removeItem('refreshToken')
+      sessionStorage.removeItem('user')
+
+      setToken(null)
+      setUser(null)
+    }
+  }, [])
 
   const value = useMemo(
     () => ({
@@ -104,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
     }),
-    [user, token, loading]
+    [user, token, loading, login, logout]
   )
 
   return (

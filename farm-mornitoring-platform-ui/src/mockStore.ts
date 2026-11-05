@@ -157,10 +157,10 @@ const notifications: NotificationItem[] = [
 ]
 
 const users: User[] = [
-  { id: 'u1', fullName: 'System Administrator', email: 'admin@farm.local', role: 'FarmAdministrator', phone: '0901000001' },
-  { id: 'u2', fullName: 'Lan Pham', email: 'lan.pham@farm.local', role: 'FarmAdministrator', phone: '0901000002' },
-  { id: 'u3', fullName: 'Minh Tran', email: 'minh.tran@farm.local', role: 'UavOperator', phone: '0901000003' },
-  { id: 'u4', fullName: 'Hoa Nguyen', email: 'hoa.nguyen@farm.local', role: 'UavOperator', phone: '0901000004' },
+  { userId: 'u1', fullName: 'System Administrator', email: 'admin@farm.local', role: 'ADMIN', phone: '0901000001' , status: 'ACTIVE', lastLoginAt: '', createdAt : '', updatedAt: '' },
+  { userId: 'u2', fullName: 'Lan Pham', email: 'lan.pham@farm.local', role: 'ADMIN', phone: '0901000002', status: 'ACTIVE', lastLoginAt: '', createdAt : '', updatedAt: ''},
+  { userId: 'u3', fullName: 'Minh Tran', email: 'minh.tran@farm.local', role: 'OPERATOR', phone: '0901000003', status: 'ACTIVE' , lastLoginAt: '', createdAt : '', updatedAt: ''},
+  { userId: 'u4', fullName: 'Hoa Nguyen', email: 'hoa.nguyen@farm.local', role: 'OPERATOR', phone: '0901000004', status: 'ACTIVE' , lastLoginAt: '', createdAt : '', updatedAt: ''},
 ]
 
 const uavs: Uav[] = [
@@ -480,11 +480,15 @@ export const mockApi = {
     list: () => wait(users.map((user) => ({ ...user }))),
     create: (body: Partial<User> & { password?: string }) => {
       const user: User = {
-        id: nextId('u'),
+        userId: nextId('u'),
         fullName: body.fullName || 'New user',
         email: body.email || 'user@farm.local',
-        role: body.role || 'UavOperator',
-        phone: body.phone,
+        role: body.role || 'OPERATOR',
+        phone: body.phone || '',
+        createdAt: body.createdAt || '',
+        updatedAt: body.updatedAt || '',
+        lastLoginAt: body.lastLoginAt || '',
+        status : body.status || ''
       }
       users.unshift(user)
       return wait({ ...user })

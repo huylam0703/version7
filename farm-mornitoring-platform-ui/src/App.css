@@ -182,3 +182,41 @@
     border-right-color: var(--border);
   }
 }
+.session-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.session-modal {
+  width: min(420px, calc(100% - 32px));
+  background: white;
+  padding: 28px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.session-modal h2 {
+  margin-bottom: 12px;
+  color: #dc2626;
+}
+
+.session-modal p {
+  color: #555;
+  line-height: 1.6;
+}
+
+.session-modal button {
+  margin-top: 16px;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+}

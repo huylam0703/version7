@@ -101,7 +101,7 @@ public static class UserQuery
         SELECT COUNT_BIG(*) 
         FROM UA_Users AS U 
         INNER JOIN UA_Roles AS R ON R.RoleId = U.RoleId
-        WHERE   (@pKeyword IS NULL OR U.FullName LIKE '%' + @pSearchString + '%' OR U.Email LIKE '%' + @pSearchString + '%')
+        WHERE   (@pSearchString IS NULL OR U.FullName LIKE '%' + @pSearchString + '%' OR U.Email LIKE '%' + @pSearchString + '%')
                 AND(@pRole IS NULL OR R.Name = @pRole)
                 AND(@pStatus IS NULL OR U.Status = @pStatus);
 
@@ -116,11 +116,11 @@ public static class UserQuery
                 U.LastLoginAt, 
                 U.CreatedAt, 
                 U.UpdatedAt
-        FROM UA_Users AS U
+        FROM    UA_Users AS U
         INNER JOIN UA_Roles AS R ON R.RoleId = U.RoleId
-        WHERE(@pKeyword IS NULL OR U.FullName LIKE '%' + @pSearchString + '%' OR U.Email LIKE '%' + @pSearchString + '%')
-        AND(@pRole IS NULL OR R.Name = @pRole)
-        AND(@pStatus IS NULL OR U.Status = @pStatus)
+        WHERE   (@pSearchString IS NULL OR U.FullName LIKE '%' + @pSearchString + '%' OR U.Email LIKE '%' + @pSearchString + '%')
+                AND(@pRole IS NULL OR R.Name = @pRole)
+                AND(@pStatus IS NULL OR U.Status = @pStatus)
         ORDER BY U.CreatedAt DESC
         OFFSET @pOffset ROWS FETCH NEXT @pPageSize ROWS ONLY;";
 }

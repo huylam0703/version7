@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { accountApi, getErrorMessage } from '../../api'
+import { accountApi, getErrorMessage } from '../../api/'
 import { useAuth } from '../../AuthContext'
 import { Button, Card, ErrorBox, Input, PageHeader } from '../../components/Ui'
 
@@ -15,9 +15,20 @@ export function SettingsPage() {
     e.preventDefault()
     setError('')
     setMessage('')
+
+    if (!user?.userId) {
+      setError('Không tìm thấy thông tin tài khoản.')
+      return
+    }
+
     try {
-      await accountApi.update({ fullName, phone, password: password || undefined })
-      setMessage('Saved.')
+      await accountApi.update(user.userId, {
+        fullName,
+        phone,
+        ...(password.trim() ? { password } : {})
+      })
+
+      setMessage('Cập nhật thông tin thành công.')
       setPassword('')
     } catch (err) {
       setError(getErrorMessage(err))
