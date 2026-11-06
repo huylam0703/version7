@@ -126,14 +126,18 @@ services:
   #     <<: *java-build
   #     args:
   #       SERVICE_PATH: services/farm-device-service
-  #   depends_on: *wait-db
+  #   depends_on:
+  #     <<: *wait-db
+  #     rabbitmq:
+  #       condition: service_healthy
   #   environment:
   #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=farm_device_db;encrypt=true;trustServerCertificate=true
   #     SPRING_DATASOURCE_USERNAME: sa
   #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+  #     RABBITMQ_HOST: rabbitmq
+  #     RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+  #     RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
   #   ports: ["8082:8080"]
-  #   networks:
-  #     - farm-network
 
   # mission-service:
   #   build:
