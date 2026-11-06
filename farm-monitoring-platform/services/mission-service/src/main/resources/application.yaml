@@ -9,15 +9,22 @@ management:
       enabled: false
 farm:
   security:
-    enabled: false
+    enabled: true
 spring:
   application:
     name: mission-service
   profiles:
     active: dev
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+#          sau nay dung khi hoan tat service va build tat ca service bang docker: AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
+
 
   datasource:
-    url: jdbc:sqlserver://localhost:1433;databaseName=farm_mission_db;encrypt=true;trustServerCertificate=true
+    url: jdbc:sqlserver://localhost:1433;databaseName=mission_db;encrypt=true;trustServerCertificate=true
     username: MSI
     password: 1234
 
