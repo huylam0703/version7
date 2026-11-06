@@ -227,6 +227,7 @@ public class MissionService {
 
         Mission saved = missionRepository.save(mission);
 
+
         // Cần lưu MissionStatusLog tại đây.
         createMissionStatusLog(
                 mission,
@@ -239,7 +240,7 @@ public class MissionService {
 
         publishMissionStatusChanged(mission, oldStatus);
 
-        return missionMapper.toMissionResponse(saved);
+        return buildMissionResponse(saved);
     }
 
     @Transactional
@@ -491,7 +492,7 @@ public class MissionService {
 
         publishMissionStatusChanged(saved, oldStatus);
 
-        return missionMapper.toMissionResponse(saved);
+        return buildMissionResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -603,5 +604,33 @@ public class MissionService {
                 FarmEvents.MISSION_STATUS_CHANGED,
                 payload
         );
+    }
+
+    private MissionResponse buildMissionResponse(Mission mission) {
+
+        MissionResponse response =
+                missionMapper.toMissionResponse(mission);
+
+        UUID missionId = mission.getMissionId();
+
+        List<MissionNode> missionNodes =
+                missionNodeRepository.findByMission_MissionId(missionId);
+
+        List<Waypoint> waypoints =
+                waypointRepository.findByMission_MissionIdOrderBySeqAsc(missionId);
+
+        response.setNodeIds(
+                missionNodes.stream()
+                        .map(MissionNode::getNodeId)
+                        .toList()
+        );
+
+        response.setWaypoints(
+                waypoints.stream()
+                        .map(missionMapper::toWaypointResponse)
+                        .toList()
+        );
+
+        return response;
     }
 }

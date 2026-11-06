@@ -33,7 +33,7 @@ public class MissionController {
     MissionService missionService;
 
     @PostMapping("/createMission")
-    @PreAuthorize("hasRole('ADMIN') or @missionAccess.canCreateInDev()")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<MissionResponse>> createMission(@Valid @RequestBody CreateMissionRequest request) {
         MissionResponse result = missionService.createMission(request);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -44,6 +44,7 @@ public class MissionController {
     }
 
     @GetMapping("/{missionId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<MissionDetailResponse>> getMissionById(
             @PathVariable UUID missionId
     ) {
@@ -55,6 +56,7 @@ public class MissionController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<Page<MissionResponse>>> getAllMissions(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
@@ -68,6 +70,7 @@ public class MissionController {
     }
 
     @PutMapping("/{missionId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<MissionResponse>> updateMission(
             @PathVariable UUID missionId,
             @Valid @RequestBody UpdateMissionRequest request
@@ -80,7 +83,7 @@ public class MissionController {
     }
 
     @PostMapping("/{missionId}/start")
-    @PreAuthorize("hasRole('ADMIN') or @missionAccess.canCreateInDev()")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<MissionResponse>> startMission(
             @PathVariable UUID missionId
     ) {
@@ -92,6 +95,7 @@ public class MissionController {
     }
 
     @PostMapping("/{missionId}/cancel")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<MissionResponse>> cancelMission(
             @PathVariable UUID missionId
     ) {
@@ -103,6 +107,7 @@ public class MissionController {
     }
 
     @PostMapping("/{missionId}/results")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<MissionResponse>> receiveMissionResults(
             @PathVariable UUID missionId,
             @Valid @RequestBody MissionResultRequest request
@@ -115,7 +120,7 @@ public class MissionController {
     }
 
     @PostMapping("/{missionId}/plan")
-    @PreAuthorize("hasRole('ADMIN') or @missionAccess.canCreateInDev()")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<MissionResponse>> planMission(
             @PathVariable UUID missionId
     ) {
@@ -127,6 +132,7 @@ public class MissionController {
     }
 
     @GetMapping("/{missionId}/results")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ResponseEntity<ApiResponse<List<MissionNodeResultResponse>>> getMissionResults(
             @PathVariable UUID missionId) {
 
@@ -138,6 +144,7 @@ public class MissionController {
     }
 
     @GetMapping("/{missionId}/status-logs")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ApiResponse<List<MissionStatusLogResponse>> getMissionStatusHistory(
             @PathVariable UUID missionId) {
 
