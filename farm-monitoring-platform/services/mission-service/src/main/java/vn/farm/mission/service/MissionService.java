@@ -22,9 +22,14 @@ import vn.farm.mission.repository.MissionStatusLogRepository;
 import vn.farm.mission.repository.WaypointRepository;
 import vn.farm.mission.validation.MissionReferenceValidator;
 import vn.farm.starter.security.CurrentUser;
+import vn.farm.contracts.events.missionstatuschanged.MissionStatusChangedPayload;
+import vn.farm.starter.events.EventPublisher;
+import vn.farm.core.FarmEvents;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -41,6 +46,7 @@ public class MissionService {
     final MissionMapper missionMapper;
     final CurrentUser currentUser;
     final MissionReferenceValidator references;
+    final EventPublisher eventPublisher;
 
     @Transactional
     public MissionResponse createMission(CreateMissionRequest request) {
@@ -215,7 +221,7 @@ public class MissionService {
                     "Chỉ Mission ở trạng thái PLANNED mới được bắt đầu"
             );
         }
-        String oldStatus = String.valueOf(mission.getStatus());
+        MissionStatus oldStatus = mission.getStatus();
         mission.setStatus(MissionStatus.RUNNING);
         mission.setStartedAt(Instant.now());
 
@@ -224,12 +230,14 @@ public class MissionService {
         // Cần lưu MissionStatusLog tại đây.
         createMissionStatusLog(
                 mission,
-                oldStatus,
+                oldStatus.name(),
                 "RUNNING",
                 mission.getCreatedBy(),
                 "OPERATOR",
                 "Mission running"
         );
+
+        publishMissionStatusChanged(mission, oldStatus);
 
         return missionMapper.toMissionResponse(saved);
     }
@@ -255,7 +263,7 @@ public class MissionService {
                     "Mission đã kết thúc, không thể hủy"
             );
         }
-        String oldStatus = String.valueOf(mission.getStatus());
+        MissionStatus oldStatus = mission.getStatus();
         mission.setStatus(MissionStatus.CANCELLED);
         mission.setEndedAt(Instant.now());
 
@@ -264,12 +272,14 @@ public class MissionService {
         // Cần lưu MissionStatusLog tại đây.
         createMissionStatusLog(
                 mission,
-                oldStatus,
+                oldStatus.name(),
                 "CANCELLED",
                 mission.getCreatedBy(),
                 "OPERATOR",
                 "Mission cancelled"
         );
+
+        publishMissionStatusChanged(saved, oldStatus);
 
         return missionMapper.toMissionResponse(saved);
     }
@@ -357,6 +367,8 @@ public class MissionService {
         mission.setSuccessNodes(successCount);
         mission.setFailedNodes(failedCount);
 
+        MissionStatus oldStatus1 = mission.getStatus();
+
         if (failedCount == 0) {
             String oldStatus = String.valueOf(mission.getStatus());
 
@@ -401,6 +413,8 @@ public class MissionService {
         mission.setEndedAt(Instant.now());
 
         Mission saved = missionRepository.save(mission);
+
+        publishMissionStatusChanged(saved, oldStatus1);
 
         // Cần lưu MissionStatusLog khi trạng thái thay đổi.
 
@@ -461,19 +475,21 @@ public class MissionService {
                     "Mission phải có ít nhất một Sensor Node"
             );
         }
-        String oldStatus = String.valueOf(mission.getStatus());
+        MissionStatus oldStatus = mission.getStatus();
         mission.setStatus(MissionStatus.PLANNED);
 
         Mission saved = missionRepository.save(mission);
 
         createMissionStatusLog(
                 mission,
-                oldStatus,
+                oldStatus.name(),
                 "PLANNED",
                 mission.getCreatedBy(),
                 "OPERATOR",
                 "Mission planned"
         );
+
+        publishMissionStatusChanged(saved, oldStatus);
 
         return missionMapper.toMissionResponse(saved);
     }
@@ -551,5 +567,41 @@ public class MissionService {
                 .build();
 
         missionStatusLogRepository.save(log);
+    }
+
+    private void publishMissionStatusChanged(
+            Mission mission,
+            MissionStatus oldStatus
+    ) {
+        MissionStatusChangedPayload payload =
+                new MissionStatusChangedPayload();
+
+        payload.setMissionId(mission.getMissionId());
+        payload.setFarmId(mission.getFarmId());
+        payload.setUavId(mission.getUavId());
+        payload.setGatewayId(mission.getGatewayId());
+
+        payload.setOldStatus(
+                oldStatus == null
+                        ? null
+                        : vn.farm.contracts.events.missionstatuschanged
+                        .MissionStatus.fromValue(oldStatus.name())
+        );
+
+        payload.setNewStatus(
+                vn.farm.contracts.events.missionstatuschanged
+                        .MissionStatus.fromValue(mission.getStatus().name())
+        );
+
+        payload.setTotalNodes(mission.getTotalNodes());
+        payload.setSuccessNodes(mission.getSuccessNodes());
+        payload.setFailedNodes(mission.getFailedNodes());
+
+        payload.setChangedAt(OffsetDateTime.now(ZoneOffset.UTC));
+
+        eventPublisher.publish(
+                FarmEvents.MISSION_STATUS_CHANGED,
+                payload
+        );
     }
 }

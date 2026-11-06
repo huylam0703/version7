@@ -33,7 +33,7 @@ public class MissionController {
     MissionService missionService;
 
     @PostMapping("/createMission")
-    @PreAuthorize("hasRole('OPERATOR') or @missionAccess.canCreateInDev()")
+    @PreAuthorize("hasRole('ADMIN') or @missionAccess.canCreateInDev()")
     public ResponseEntity<ApiResponse<MissionResponse>> createMission(@Valid @RequestBody CreateMissionRequest request) {
         MissionResponse result = missionService.createMission(request);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -80,6 +80,7 @@ public class MissionController {
     }
 
     @PostMapping("/{missionId}/start")
+    @PreAuthorize("hasRole('ADMIN') or @missionAccess.canCreateInDev()")
     public ResponseEntity<ApiResponse<MissionResponse>> startMission(
             @PathVariable UUID missionId
     ) {
@@ -114,6 +115,7 @@ public class MissionController {
     }
 
     @PostMapping("/{missionId}/plan")
+    @PreAuthorize("hasRole('ADMIN') or @missionAccess.canCreateInDev()")
     public ResponseEntity<ApiResponse<MissionResponse>> planMission(
             @PathVariable UUID missionId
     ) {
