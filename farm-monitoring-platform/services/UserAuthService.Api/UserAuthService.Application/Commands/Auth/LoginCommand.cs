@@ -21,7 +21,7 @@ namespace UserAuthService.Application.Commands.Auth
         /// <summary>
         /// 
         /// </summary>
-        public string Email { get; set; } = "";
+        public string? Email { get; set; }
         /// <summary>
         /// 
         /// </summary>
@@ -90,7 +90,7 @@ namespace UserAuthService.Application.Commands.Auth
         /// <returns></returns>
         public async Task<Result<LoginResponse>> Handle(LoginCommand request, CancellationToken cancellationToken)
         {
-            var email = request.Email.Trim().ToLowerInvariant();
+            var email = request.Email!.Trim().ToLowerInvariant();
             var user = await _userService.GetByEmailAsync(email);
             
 

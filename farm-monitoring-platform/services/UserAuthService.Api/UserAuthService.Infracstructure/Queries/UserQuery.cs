@@ -87,9 +87,13 @@ public static class UserQuery
     /// </summary>
     public const string PasswordCheck = @"
         SELECT 
-        CASE WHEN EXISTS (SELECT 1 FROM UA_Users WHERE PasswordHash = @pPasswordHash) THEN 1 ELSE 0 END
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM UA_Users
+                WHERE UserId = @pUserId
+                  AND PasswordHash = @pPasswordHash
+            ) THEN 1 ELSE 0 END
     ";
-
     /// <summary>
     /// Lấy danh sách user có phân trang
     /// </summary>

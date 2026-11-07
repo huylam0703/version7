@@ -157,13 +157,26 @@ public class UserService : IUserService
     {
         var parameters = new DynamicParameters();
         parameters.Add("@pUserId", userId, DbType.Guid, ParameterDirection.Input);
-        var saltBase64 = (await _query.QueryAsync<string>(ConnectionString, UserQuery.GetHashSalt, parameters)).FirstOrDefault();
 
-        var hashSalt = Convert.FromBase64String(saltBase64!);
+        var saltBase64 = (await _query.QueryAsync<string>(
+            ConnectionString,
+            UserQuery.GetHashSalt,
+            parameters
+        )).FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(saltBase64))
+            return false;
+
+        var hashSalt = Convert.FromBase64String(saltBase64);
         var passwordHash = _hash.HashPassword(password, hashSalt);
 
         parameters.Add("@pPasswordHash", passwordHash, DbType.String, ParameterDirection.Input);
-        var userInfo = await _query.QueryAsync<int>(ConnectionString, UserQuery.PasswordCheck, parameters);
+
+        var userInfo = await _query.QueryAsync<int>(
+            ConnectionString,
+            UserQuery.PasswordCheck,
+            parameters
+        );
 
         return userInfo.FirstOrDefault() == 1;
     }
