@@ -26,6 +26,8 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+    networks:
+      - farm-network
 
   db-init:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -43,7 +45,21 @@ services:
           echo "Running $$f"
           /opt/mssql-tools18/bin/sqlcmd -C -S sqlserver -U sa -P "$$MSSQL_SA_PASSWORD" -b -i "$$f"
         done
-
+    networks:
+      - farm-network
+  
+  frontend:
+    build:
+      context: ../../farm-mornitoring-platform-ui
+      dockerfile: Dockerfile
+    container_name: farm-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - farm-network
+      
   # ================= .NET (3 service) =================
   user-auth-service:
     entrypoint: ["dotnet", "UserAuthService.Api.dll"]
@@ -105,6 +121,8 @@ services:
       ReverseProxy__Clusters__alert__Destinations__d1__Address: http://alert-service:8080/
       ReverseProxy__Clusters__notification__Destinations__d1__Address: http://notification-service:8080/
     ports: ["5000:8080"]
+    networks:
+      - farm-network
 
   # ================= Java (4 service) =================
   # farm-device-service:
@@ -112,11 +130,17 @@ services:
   #     <<: *java-build
   #     args:
   #       SERVICE_PATH: services/farm-device-service
-  #   depends_on: *wait-db
+  #   depends_on:
+  #     <<: *wait-db
+  #     rabbitmq:
+  #       condition: service_healthy
   #   environment:
   #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=farm_device_db;encrypt=true;trustServerCertificate=true
   #     SPRING_DATASOURCE_USERNAME: sa
   #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+  #     RABBITMQ_HOST: rabbitmq
+  #     RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+  #     RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
   #   ports: ["8082:8080"]
 
   # mission-service:
@@ -142,6 +166,8 @@ services:
   #     SPRING_DATA_REDIS_PORT: 6379
   #     SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
   #   ports: ["8083:8080"]
+  #   networks:
+  #     - farm-network
 
   # sensor-data-service:
   #   build:
@@ -154,6 +180,8 @@ services:
   #     SPRING_DATASOURCE_USERNAME: sa
   #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
   #   ports: ["8084:8080"]
+  #   networks:
+  #     - farm-network
 
   # alert-service:
   #   build:
@@ -166,6 +194,12 @@ services:
   #     SPRING_DATASOURCE_USERNAME: sa
   #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
   #   ports: ["8085:8080"]
+  #   networks:
+  #     - farm-network
+
+networks:
+  farm-network:
+    driver: bridge
 
 volumes:
   sqldata:

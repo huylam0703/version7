@@ -9,7 +9,7 @@ import org.hibernate.annotations.Nationalized;
 import vn.farm.starter.jpa.AuditableEntity;
 
 @Entity
-@Table(name = "Farms")
+@Table(name = "FD_Farms")
 @Getter
 @Setter
 public class Farm extends AuditableEntity {

@@ -9,8 +9,8 @@ export type User = {
   role: UserRole
   status: string
   lastLoginAt: string | null
-  createdAt: string
-  updatedAt: string
+  createdAt: string | null
+  updatedAt: string | null
 }
 
 export type LoginResponse = {

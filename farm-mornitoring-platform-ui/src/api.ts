@@ -65,15 +65,7 @@ export const reportApi = {
   summary: (_params?: object) => mockApi.reports.summary(),
 }
 
-export const userApi = {
-  list: () => mockApi.users.list(),
-  create: (body: Partial<User> & { password?: string }) => mockApi.users.create(body),
-  update: (userId: string, body: Partial<User>) => mockApi.users.create({ ...body, userId }),
-}
 
-export const accountApi = {
-  update: (body: Partial<User> & { password?: string }) => mockApi.account.update(body),
-}
 
 export const uavApi = {
   list: () => mockApi.uavs.list(),

@@ -95,6 +95,8 @@ public class UsersController : ControllerBase
         var result = await _mediator.Send(new UnlockUserCommand { UserId = id }, ct);
         return result.ToActionResult(message: "Đã mở khóa tài khoản.");
     }
+
+
     #endregion
 
     #region Queries
@@ -137,7 +139,6 @@ public class UsersController : ControllerBase
         var result = await _mediator.Send(query, ct);
         return result.ToActionResult();
     }
-
 
     #endregion
 }

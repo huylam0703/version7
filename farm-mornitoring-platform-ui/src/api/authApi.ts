@@ -1,3 +1,4 @@
+
 import axiosClient from './axiosClient'
 import type {
   ApiResponse,
@@ -13,5 +14,20 @@ export const authApi = {
     )
 
     return response.data.result
+  },
+
+  refresh: async (refreshToken: string) => {
+    const response = await axiosClient.post(
+      '/v1/auth/refresh',
+      { refreshToken }
+    )
+
+    return response.data.result
+  },
+
+  logout: async (refreshToken: string) => {
+    return axiosClient.post('/v1/auth/logout', {
+      refreshToken,
+    })
   },
 }

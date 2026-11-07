@@ -87,24 +87,50 @@ public class RefreshTokenService : IRefreshTokenService
     /// <returns></returns>
     public async Task<ConsumeResult> ConsumeAsync(string token, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(token))
+            return new ConsumeResult(ConsumeStatus.Invalid, null);
+
         var parameters = new DynamicParameters();
-        parameters.Add("@pHash", Hash(token), DbType.AnsiString, ParameterDirection.Input);
-        var userId = await _query.QueryAsync<Guid?>(ConnectionString, RefreshTokenQuery.ConsumeRefreshToken, parameters);
+        parameters.Add(
+            "@pHash",
+            Hash(token),
+            DbType.AnsiString,
+            ParameterDirection.Input
+        );
 
-        if (userId is not null)
-            return new ConsumeResult(ConsumeStatus.Ok, userId.FirstOrDefault());
+        var userId = (await _query.QueryAsync<Guid?>(
+            ConnectionString,
+            RefreshTokenQuery.ConsumeRefreshToken,
+            parameters
+        )).FirstOrDefault();
 
-        var reusedUser = (await _query.QueryAsync<Guid?>(
-            
-            ConnectionString, RefreshTokenQuery.FindRevokedRefreshToken, parameters)).FirstOrDefault();
-
-        if (reusedUser is not null)
+        if (userId.HasValue)
         {
-            await RevokeAllAsync(reusedUser.Value, ct);
-            return new ConsumeResult(ConsumeStatus.Reused, reusedUser);
+            return new ConsumeResult(
+                ConsumeStatus.Ok,
+                userId.Value
+            );
         }
 
-        return new ConsumeResult(ConsumeStatus.Invalid, null); // không tồn tại hoặc hết hạn
+        var reusedUserId = (await _query.QueryAsync<Guid?>(
+            ConnectionString,
+            RefreshTokenQuery.FindRevokedRefreshToken,
+            parameters
+        )).FirstOrDefault();
+
+        if (reusedUserId.HasValue)
+        {
+            await RevokeAllAsync(reusedUserId.Value, ct);
+
+            return new ConsumeResult(
+                ConsumeStatus.Reused,
+                reusedUserId.Value
+            );
+        }
+        return new ConsumeResult(
+            ConsumeStatus.Invalid,
+            null
+        );
     }
 
     /// <summary>

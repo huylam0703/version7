@@ -23,6 +23,7 @@ import { MissionMonitorPage } from './pages/operator/MissionMonitorPage'
 import { MissionResultsPage } from './pages/operator/MissionResultsPage'
 import { NotificationsPage } from './pages/shared/NotificationsPage'
 import { SettingsPage } from './pages/shared/SettingsPage'
+import SessionExpiredListener from './components/SessionExpiredListener'
 
 function HomeRedirect() {
   const { user } = useAuth()
@@ -41,6 +42,8 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <SessionExpiredListener />
+
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<AppLayout />}>

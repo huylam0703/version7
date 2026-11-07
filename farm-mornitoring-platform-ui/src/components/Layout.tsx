@@ -239,15 +239,18 @@ export function AppLayout() {
                 <button className="block w-full px-3 py-2 text-left hover:bg-stone-50" onClick={() => navigate('/settings')}>
                   Account settings
                 </button>
+                
                 <button
                   className="block w-full px-3 py-2 text-left text-red-600 hover:bg-red-50"
-                  onClick={() => {
-                    logout()
-                    navigate('/login')
+                  onClick={async () => {
+                    setMenuOpen(false)
+                    await logout()
+                    navigate('/login', { replace: true })
                   }}
                 >
                   Log out
                 </button>
+
               </div>
             ) : null}
           </div>

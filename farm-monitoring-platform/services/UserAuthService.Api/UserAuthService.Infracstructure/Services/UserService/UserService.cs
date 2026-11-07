@@ -135,7 +135,7 @@ public class UserService : IUserService
     public async Task<PagedResult<GetUserDto>> ListUsersAsync(UserListFilter filter)
     {
         var parameters = new DynamicParameters();
-        parameters.Add("@pKeyword", string.IsNullOrWhiteSpace(filter.Keyword) ? null : filter.Keyword.Trim(), DbType.String, ParameterDirection.Input, 100);
+        parameters.Add("@pSearchString", string.IsNullOrWhiteSpace(filter.Keyword) ? null : filter.Keyword.Trim(), DbType.String, ParameterDirection.Input, 100);
         parameters.Add("@pRole", string.IsNullOrWhiteSpace(filter.Role) ? null : filter.Role.Trim().ToUpperInvariant(), DbType.AnsiString, ParameterDirection.Input, 30);
         parameters.Add("@pStatus", string.IsNullOrWhiteSpace(filter.Status) ? null : filter.Status.Trim().ToUpperInvariant(), DbType.AnsiString, ParameterDirection.Input, 10);
         parameters.Add("@pOffset", (filter.Page - 1) * filter.PageSize, DbType.Int32, ParameterDirection.Input);
@@ -225,6 +225,12 @@ public class UserService : IUserService
 
         await _query.ExecuteAsync(ConnectionString, UserCommand.UpdateUser, parameters);
     }
+
+    //public async Task UpdateInfoAsync(Guid userId, string fullName, string? phone, string password, string hashSalt)
+    //{
+
+    //}
+
 
     /// <summary>
     /// 
