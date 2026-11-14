@@ -5,9 +5,15 @@ import org.springframework.stereotype.Repository;
 import vn.farm.mission.entity.MissionNode;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface MissionNodeRepository extends JpaRepository<MissionNode, UUID> {
     List<MissionNode> findByMission_MissionId(UUID missionId);
+
+    Optional<MissionNode> findByMission_MissionIdAndNodeId(
+            UUID missionId,
+            UUID nodeId
+    );
 }
