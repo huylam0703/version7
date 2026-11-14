@@ -6,4 +6,6 @@ public final class FarmEvents {
 
     public static final String MISSION_STATUS_CHANGED =
             "mission.status_changed";
+
+    public static final String MISSION_READY = "mission.ready";
 }

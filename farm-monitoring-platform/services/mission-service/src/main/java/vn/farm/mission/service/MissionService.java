@@ -12,18 +12,16 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.farm.core.BusinessException;
+import vn.farm.mission.dto.event.MissionReadyPayload;
 import vn.farm.mission.dto.request.*;
 import vn.farm.mission.dto.response.*;
 import vn.farm.mission.entity.*;
 import vn.farm.mission.mapper.MissionMapper;
-import vn.farm.mission.repository.MissionNodeRepository;
-import vn.farm.mission.repository.MissionRepository;
-import vn.farm.mission.repository.MissionStatusLogRepository;
-import vn.farm.mission.repository.WaypointRepository;
+import vn.farm.mission.outbox.MissionOutboxService;
+import vn.farm.mission.repository.*;
 import vn.farm.mission.validation.MissionReferenceValidator;
 import vn.farm.starter.security.CurrentUser;
 import vn.farm.contracts.events.missionstatuschanged.MissionStatusChangedPayload;
-import vn.farm.starter.events.EventPublisher;
 import vn.farm.core.FarmEvents;
 
 import java.math.BigDecimal;
@@ -46,7 +44,8 @@ public class MissionService {
     final MissionMapper missionMapper;
     final CurrentUser currentUser;
     final MissionReferenceValidator references;
-    final EventPublisher eventPublisher;
+    final MissionExecutionRepository missionExecutionRepository;
+    final MissionOutboxService missionOutboxService;
 
     @Transactional
     public MissionResponse createMission(CreateMissionRequest request) {
@@ -221,14 +220,47 @@ public class MissionService {
                     "Chỉ Mission ở trạng thái PLANNED mới được bắt đầu"
             );
         }
+
+        if (missionExecutionRepository.existsByMission_MissionId(missionId)) {
+            throw BusinessException.invalid(
+                    "MISSION_ALREADY_DISPATCHED",
+                    "Mission đã có Execution"
+            );
+        }
+
         MissionStatus oldStatus = mission.getStatus();
+        Instant now = Instant.now();
+
         mission.setStatus(MissionStatus.RUNNING);
-        mission.setStartedAt(Instant.now());
+        mission.setStartedAt(now);
 
         Mission saved = missionRepository.save(mission);
 
+        MissionExecution execution = MissionExecution.builder()
+                .mission(saved)
+                .status(MissionExecutionStatus.WAITING_ACK)
+                .startedAt(now)
+                .ackDeadline(now.plusSeconds(90))
+                .notificationAttempts(1)
+                .lastConfirmedSequence(0L)
+                .build();
 
-        // Cần lưu MissionStatusLog tại đây.
+        execution = missionExecutionRepository.save(execution);
+
+        MissionReadyPayload payload = new MissionReadyPayload(
+                execution.getExecutionId(),
+                saved.getMissionId(),
+                saved.getFarmId(),
+                saved.getUavId(),
+                saved.getGatewayId(),
+                execution.getAckDeadline()
+        );
+
+        missionOutboxService.saveEvent(
+                FarmEvents.MISSION_READY,
+                payload
+        );
+
         createMissionStatusLog(
                 mission,
                 oldStatus.name(),
@@ -269,6 +301,19 @@ public class MissionService {
         mission.setEndedAt(Instant.now());
 
         Mission saved = missionRepository.save(mission);
+
+        missionExecutionRepository.findByMission_MissionId(missionId)
+                .ifPresent(execution -> {
+
+                    if (execution.getStatus() != MissionExecutionStatus.COMPLETED
+                            && execution.getStatus() != MissionExecutionStatus.FAILED
+                            && execution.getStatus() != MissionExecutionStatus.CANCELLED) {
+
+                        execution.setStatus(MissionExecutionStatus.CANCELLED);
+
+                        missionExecutionRepository.save(execution);
+                    }
+                });
 
         // Cần lưu MissionStatusLog tại đây.
         createMissionStatusLog(
@@ -600,9 +645,81 @@ public class MissionService {
 
         payload.setChangedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-        eventPublisher.publish(
+        missionOutboxService.saveEvent(
                 FarmEvents.MISSION_STATUS_CHANGED,
                 payload
+        );
+    }
+
+    @Transactional
+    public MissionAckResponse ackMission(
+            UUID missionId,
+            MissionAckRequest request,
+            String clientId
+    ) {
+        MissionExecution execution = missionExecutionRepository
+                .findForAck(request.getExecutionId(), missionId)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "EXECUTION_NOT_FOUND",
+                        "Không tìm thấy MissionExecution"
+                ));
+
+        Mission mission = execution.getMission();
+
+        if (mission.getStatus() != MissionStatus.RUNNING) {
+            throw BusinessException.invalid(
+                    "INVALID_MISSION_STATUS",
+                    "Mission không ở trạng thái RUNNING"
+            );
+        }
+
+        // Kiểm tra Simulator được phân công
+        if (clientId == null
+                || execution.getAssignedClientId() == null
+                || !clientId.equals(execution.getAssignedClientId())) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_NOT_ASSIGNED",
+                    "Simulator không được phân công Mission này"
+            );
+        }
+
+        // ACK trùng: trả lại kết quả đã xác nhận
+        if (execution.getStatus() == MissionExecutionStatus.EXECUTING
+                && execution.getAcknowledgedAt() != null) {
+            return new MissionAckResponse(
+                    missionId,
+                    execution.getExecutionId(),
+                    execution.getStatus().name(),
+                    execution.getAcknowledgedAt()
+            );
+        }
+
+        if (execution.getStatus() != MissionExecutionStatus.WAITING_ACK) {
+            throw BusinessException.invalid(
+                    "INVALID_EXECUTION_STATUS",
+                    "Execution không ở trạng thái WAITING_ACK"
+            );
+        }
+
+        Instant now = Instant.now();
+
+        if (execution.getAckDeadline() == null
+                || now.isAfter(execution.getAckDeadline())) {
+            throw BusinessException.invalid(
+                    "ACK_DEADLINE_EXPIRED",
+                    "Đã quá thời hạn xác nhận Mission"
+            );
+        }
+
+        execution.setStatus(MissionExecutionStatus.EXECUTING);
+        execution.setAcknowledgedAt(now);
+        missionExecutionRepository.save(execution);
+
+        return new MissionAckResponse(
+                missionId,
+                execution.getExecutionId(),
+                execution.getStatus().name(),
+                execution.getAcknowledgedAt()
         );
     }
 

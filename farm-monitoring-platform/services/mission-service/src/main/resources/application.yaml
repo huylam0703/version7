@@ -15,6 +15,15 @@ spring:
     name: mission-service
   profiles:
     active: dev
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
   security:
     oauth2:
       resourceserver:
