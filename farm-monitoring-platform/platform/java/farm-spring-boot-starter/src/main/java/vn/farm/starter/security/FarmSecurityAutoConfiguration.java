@@ -11,6 +11,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import java.util.Set;
+import java.util.HashSet;
+
+import org.springframework.security.core.GrantedAuthority;
 
 @AutoConfiguration(beforeName = {
         "org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration",
@@ -23,11 +27,29 @@ public class FarmSecurityAutoConfiguration {
     @Bean
     @ConditionalOnProperty(name = "farm.security.enabled", havingValue = "true", matchIfMissing = true)
     SecurityFilterChain jwtChain(HttpSecurity http) throws Exception {
-        JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
-        authorities.setAuthoritiesClaimName("role");
-        authorities.setAuthorityPrefix("ROLE_");
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(authorities);
+        JwtGrantedAuthoritiesConverter roleAuthorities =
+                new JwtGrantedAuthoritiesConverter();
+
+        roleAuthorities.setAuthoritiesClaimName("role");
+        roleAuthorities.setAuthorityPrefix("ROLE_");
+
+        JwtGrantedAuthoritiesConverter scopeAuthorities =
+                new JwtGrantedAuthoritiesConverter();
+
+        // Mặc định đọc scope hoặc scp và tạo SCOPE_...
+
+        JwtAuthenticationConverter converter =
+                new JwtAuthenticationConverter();
+
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+
+            Set<GrantedAuthority> combined = new HashSet<>();
+
+            combined.addAll(roleAuthorities.convert(jwt));
+            combined.addAll(scopeAuthorities.convert(jwt));
+
+            return combined;
+        });
 
         http.csrf(c -> c.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

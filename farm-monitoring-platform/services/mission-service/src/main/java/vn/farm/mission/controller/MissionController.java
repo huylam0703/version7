@@ -9,15 +9,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import vn.farm.core.api.ApiResponse;
 import vn.farm.mission.dto.request.CreateMissionRequest;
+import vn.farm.mission.dto.request.MissionAckRequest;
 import vn.farm.mission.dto.request.MissionResultRequest;
 import vn.farm.mission.dto.request.UpdateMissionRequest;
-import vn.farm.mission.dto.response.MissionDetailResponse;
-import vn.farm.mission.dto.response.MissionNodeResultResponse;
-import vn.farm.mission.dto.response.MissionResponse;
-import vn.farm.mission.dto.response.MissionStatusLogResponse;
+import vn.farm.mission.dto.response.*;
 import vn.farm.mission.entity.MissionStatus;
 import vn.farm.mission.service.MissionService;
 
@@ -152,6 +152,27 @@ public class MissionController {
                 .code(1000)
                 .message("Get mission status history successfully")
                 .result(missionService.getMissionStatusHistory(missionId))
+                .build();
+    }
+
+    @PostMapping("/{missionId}/ack")
+    @PreAuthorize("hasAuthority('SCOPE_mission:ack')")
+    public ApiResponse<MissionAckResponse> ackMission(
+            @PathVariable UUID missionId,
+            @Valid @RequestBody MissionAckRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        String clientId = jwt.getClaimAsString("client_id");
+
+        MissionAckResponse response = missionService.ackMission(
+                missionId,
+                request,
+                clientId
+        );
+
+        return ApiResponse.<MissionAckResponse>builder()
+                .message("Mission acknowledged successfully")
+                .result(response)
                 .build();
     }
 }
