@@ -53,4 +53,16 @@ public interface MissionExecutionRepository
             @Param("executionId") UUID executionId,
             @Param("status") MissionExecutionStatus status
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT e
+    FROM MissionExecution e
+    WHERE e.executionId = :executionId
+      AND e.mission.missionId = :missionId
+    """)
+    Optional<MissionExecution> findForProgress(
+            @Param("executionId") UUID executionId,
+            @Param("missionId") UUID missionId
+    );
 }

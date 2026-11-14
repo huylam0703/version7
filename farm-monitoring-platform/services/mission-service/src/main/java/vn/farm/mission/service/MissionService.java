@@ -106,16 +106,21 @@ public class MissionService {
                         ))
                 .toList();
 
-        return new MissionResponse(mission.getMissionId(),
-                mission.getFarmId(),
-                mission.getUavId(),
-                mission.getGatewayId(),
-                mission.getCreatedBy(),
-                mission.getName(),
-                mission.getStatus().name(),
-                mission.getPlannedAt(),
-                mission.getTotalNodes(),
-                List.copyOf(request.getNodeIds()), wpResponse);
+
+        return MissionResponse.builder()
+                .missionId(mission.getMissionId())
+                .farmId(mission.getFarmId())
+                .uavId(mission.getUavId())
+                .gatewayId(mission.getGatewayId())
+                .createdBy(mission.getCreatedBy())
+                .name(mission.getName())
+                .status(mission.getStatus().name())
+                .plannedAt(mission.getPlannedAt())
+                .totalNodes(mission.getTotalNodes())
+                .nodeIds(List.copyOf(request.getNodeIds()))
+                .waypoints(wpResponse)
+                .build();
+
     }
 
     @Transactional(readOnly = true)
@@ -272,7 +277,10 @@ public class MissionService {
 
         publishMissionStatusChanged(mission, oldStatus);
 
-        return buildMissionResponse(saved);
+        MissionResponse response = buildMissionResponse(saved);
+        response.setExecutionId(execution.getExecutionId());
+
+        return response;
     }
 
     @Transactional

@@ -41,6 +41,7 @@ public class Waypoint {
     @Column(name="HoverSec",nullable=false)
     short hoverSec=0;
 
+    @Builder.Default
     @Column(name="Status",nullable=false,length=10)
     String status="PENDING";
 

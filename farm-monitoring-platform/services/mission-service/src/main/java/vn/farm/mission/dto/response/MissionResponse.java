@@ -1,5 +1,6 @@
 package vn.farm.mission.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
@@ -17,6 +18,8 @@ public class MissionResponse {
     UUID missionId;
     UUID farmId;
     UUID uavId;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    UUID executionId;
     UUID gatewayId;
     UUID createdBy;
     String name;

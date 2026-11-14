@@ -33,6 +33,7 @@ public class MissionNode {
     @JoinColumn(name="WaypointId")
     Waypoint waypoint;
 
+    @Builder.Default
     @Column(name="Result",nullable=false,length=10)
     String result="PENDING";
 
