@@ -11,6 +11,7 @@ import vn.farm.alert.entity.AlertStatus;
 import vn.farm.alert.mapper.AlertMapper;
 import vn.farm.alert.repository.AlertRepository;
 import vn.farm.alert.validation.AlertValidator;
+import vn.farm.core.BusinessException;
 
 import java.util.List;
 import java.util.UUID;
@@ -93,8 +94,9 @@ public class AlertService {
         Alert alert = findAlertById(id);
 
         if (newStatus == null) {
-            throw new IllegalArgumentException(
-                    "newStatus không được null"
+            throw BusinessException.invalid(
+                    "INVALID_ALERT_STATUS",
+                    "Trạng thái Alert không được null"
             );
         }
 
@@ -107,8 +109,9 @@ public class AlertService {
             alertValidator.validateResolve(alert);
 
         } else {
-            throw new IllegalArgumentException(
-                    "Invalid alert status transition"
+            throw BusinessException.invalid(
+                    "INVALID_STATUS_TRANSITION",
+                    "Không thể chuyển Alert sang trạng thái: " + newStatus
             );
         }
 
@@ -143,15 +146,17 @@ public class AlertService {
     private Alert findAlertById(UUID id) {
 
         if (id == null) {
-            throw new IllegalArgumentException(
+            throw BusinessException.invalid(
+                    "INVALID_ALERT_ID",
                     "Alert ID không được null"
             );
         }
 
         return alertRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Alert not found: " + id
+                        BusinessException.notFound(
+                                "ALERT_NOT_FOUND",
+                                "Không tìm thấy Alert với ID: " + id
                         )
                 );
     }
