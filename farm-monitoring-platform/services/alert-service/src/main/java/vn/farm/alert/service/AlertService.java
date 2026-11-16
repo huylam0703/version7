@@ -83,8 +83,18 @@ public class AlertService {
                 .map(alertMapper::toAlertResponse)
                 .toList();
     }
-
-    // 6. Cập nhật trạng thái Alert
+    // 6. Lọc Alert theo Node ID và trạng thái
+    @Transactional(readOnly = true)
+    public List<AlertResponse> getAlertsByNodeIdAndStatus(
+            UUID nodeId,
+            AlertStatus status
+    ) {
+        return alertRepository.findByNodeIdAndStatus(nodeId, status)
+                .stream()
+                .map(alertMapper::toAlertResponse)
+                .toList();
+    }
+    // 7. Cập nhật trạng thái Alert
     @Transactional
     public AlertResponse updateStatus(
             UUID id,
@@ -122,7 +132,7 @@ public class AlertService {
         return alertMapper.toAlertResponse(savedAlert);
     }
 
-    // 7. Xác nhận Alert
+    // 8. Xác nhận Alert
     @Transactional
     public AlertResponse acknowledgeAlert(UUID id) {
 
@@ -132,7 +142,7 @@ public class AlertService {
         );
     }
 
-    // 8. Đánh dấu Alert đã xử lý
+    // 9. Đánh dấu Alert đã xử lý
     @Transactional
     public AlertResponse resolveAlert(UUID id) {
 
@@ -142,7 +152,7 @@ public class AlertService {
         );
     }
 
-    // 9. Tìm Alert theo ID (dùng chung)
+    // 10. Tìm Alert theo ID (dùng chung)
     private Alert findAlertById(UUID id) {
 
         if (id == null) {

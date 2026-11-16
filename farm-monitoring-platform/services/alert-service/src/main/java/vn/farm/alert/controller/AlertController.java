@@ -73,6 +73,18 @@ public class AlertController {
                 .build();
     }
 
+    // Lọc Alert theo Node ID và trạng thái
+    @GetMapping("/node/{nodeId}/status/{status}")
+    public ApiResponse<List<AlertResponse>> getAlertsByNodeIdAndStatus(
+            @PathVariable UUID nodeId,
+            @PathVariable AlertStatus status
+    ) {
+        return ApiResponse.<List<AlertResponse>>builder()
+                .message("Get alerts by node and status successfully")
+                .result(alertService.getAlertsByNodeIdAndStatus(nodeId, status))
+                .build();
+    }
+
     @PatchMapping("/{id}/acknowledge")
     public ApiResponse<AlertResponse> acknowledgeAlert(
             @PathVariable UUID id) {
