@@ -9,6 +9,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import vn.farm.core.BusinessException;
 import vn.farm.core.api.ApiResponse;
 
@@ -35,6 +36,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiResponse<Void>> invalidParam(ConstraintViolationException ex) {
         return error(HttpStatus.BAD_REQUEST, 1001, "Invalid request parameters");
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> invalidType(
+            MethodArgumentTypeMismatchException ex) {
+
+        return error(
+                HttpStatus.BAD_REQUEST,
+                1001,
+                "Invalid request parameter: " + ex.getName()
+        );
     }
 
     @ExceptionHandler(BusinessException.class)
