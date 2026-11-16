@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using NotificationService.Infrastructure;
 using NotificationService.Infrastructure.Data;
+using NotificationService.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +18,11 @@ builder.Services.AddInfrastructureService();
 // Đăng ký Controllers và OpenAPI
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+builder.Services.AddHostedService<NotificationEventConsumer>();
+builder.Services.AddHostedService<NotificationEmailWorker>();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<NotificationRecipients>();
+builder.Services.AddScoped<NotificationEventProcessor>();
 
 // ========================================
 // 2. Cấu hình SQL Server
@@ -28,7 +34,8 @@ var connectionString =
         "Chưa cấu hình ConnectionStrings:Default");
 
 builder.Services.AddDbContext<NotificationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sql =>
+        sql.MigrationsAssembly(typeof(Program).Assembly.GetName().Name)));
 
 // ========================================
 // 3. Cấu hình JWT Authentication
@@ -74,6 +81,12 @@ builder.Services.AddAuthorization();
 // ========================================
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var database = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
+    await database.Database.MigrateAsync();
+}
 
 // ========================================
 // 6. OpenAPI

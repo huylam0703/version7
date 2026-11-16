@@ -33,7 +33,14 @@ export function NotificationsPage() {
                 <p className="mt-1 text-xs text-gray-400">{formatDate(n.createdAt)}</p>
               </div>
               {!n.isRead ? (
-                <button className="text-sm text-brand" onClick={() => notificationApi.markRead(n.id).then(load)}>
+                <button className="text-sm text-brand" onClick={async () => {
+                  try {
+                    await notificationApi.markRead(n.id)
+                    await load()
+                  } catch (e) {
+                    setError(getErrorMessage(e))
+                  }
+                }}>
                   Mark read
                 </button>
               ) : null}

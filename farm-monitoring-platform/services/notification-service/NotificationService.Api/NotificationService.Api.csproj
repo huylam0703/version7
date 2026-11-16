@@ -14,6 +14,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="RabbitMQ.Client" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 

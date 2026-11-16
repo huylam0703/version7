@@ -17,4 +17,5 @@ public class Notification
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? ReadAt { get; set; }
+    public Guid? SourceEventId { get; set; }
 }

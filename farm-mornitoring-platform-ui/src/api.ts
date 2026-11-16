@@ -10,6 +10,8 @@ import type {
   Zone,
 } from './types'
 import { mockApi } from './mockStore'
+import axiosClient from './api/axiosClient'
+import type { NotificationItem } from './types'
 
 export function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message
@@ -57,8 +59,10 @@ export const alertApi = {
 }
 
 export const notificationApi = {
-  list: () => mockApi.notifications.list(),
-  markRead: (id: string) => mockApi.notifications.markRead(id),
+  list: async () => (await axiosClient.get<NotificationItem[]>('/v1/notifications/me')).data,
+  markRead: async (id: string) => {
+    await axiosClient.patch(`/v1/notifications/${id}/read`)
+  },
 }
 
 export const reportApi = {
