@@ -22,7 +22,7 @@ namespace NotificationService.Api.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("NotificationService.Api.Models.Notification", b =>
+            modelBuilder.Entity("NotificationService.Domain.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -43,6 +43,9 @@ namespace NotificationService.Api.Migrations
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<Guid?>("SourceEventId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -62,7 +65,88 @@ namespace NotificationService.Api.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex("UserId", "SourceEventId")
+                        .IsUnique()
+                        .HasFilter("[SourceEventId] IS NOT NULL");
+
                     b.ToTable("Notifications", (string)null);
+                });
+
+            modelBuilder.Entity("NotificationService.Domain.Entities.NotificationEmail", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("FailedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("LeaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Recipient")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId", "UserId")
+                        .IsUnique();
+
+                    b.HasIndex("SentAt", "FailedAt", "NextAttemptAt");
+
+                    b.ToTable("NotificationEmails");
+                });
+
+            modelBuilder.Entity("NotificationService.Domain.Entities.ProcessedNotificationEvent", b =>
+                {
+                    b.Property<Guid>("EventId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("EventId");
+
+                    b.ToTable("ProcessedNotificationEvents");
                 });
 #pragma warning restore 612, 618
         }
