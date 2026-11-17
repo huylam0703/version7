@@ -1,4 +1,14 @@
 package vn.farm.mission.dto.response;
 
-public class MissionExecutionProgressResponse {
+import java.time.Instant;
+import java.util.UUID;
+
+public record MissionExecutionProgressResponse(
+        UUID missionId,
+        UUID executionId,
+        String executionStatus,
+        long lastConfirmedSequence,
+        Instant acknowledgedAt,
+        Instant lastHeartbeatAt
+) {
 }

@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -43,17 +44,49 @@ public class MissionController {
                         .build());
     }
 
+
     @GetMapping("/{missionId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
+    @PreAuthorize(
+            "hasAnyRole('ADMIN', 'OPERATOR') or " +
+                    "hasAuthority('SCOPE_mission:read')"
+    )
     public ResponseEntity<ApiResponse<MissionDetailResponse>> getMissionById(
-            @PathVariable UUID missionId
+            @PathVariable UUID missionId,
+            Authentication authentication,
+            @AuthenticationPrincipal Jwt jwt
     ) {
-        return ResponseEntity.status(HttpStatus.OK)
-                .body(ApiResponse.<MissionDetailResponse>builder()
+        boolean isOperator = authentication.getAuthorities().stream()
+                .anyMatch(authority ->
+                        authority.getAuthority().equals("ROLE_ADMIN")
+                                || authority.getAuthority().equals("ROLE_OPERATOR")
+                );
+
+        MissionDetailResponse result;
+
+        if (isOperator) {
+            // ADMIN / OPERATOR
+            result = missionService.getMissionById(missionId);
+        } else {
+            // UAV Simulator
+            String clientId = jwt != null
+                    ? jwt.getClaimAsString("client_id")
+                    : null;
+
+            result = missionService.getMissionById(
+                    missionId,
+                    clientId
+            );
+        }
+
+        return ResponseEntity.ok(
+                ApiResponse.<MissionDetailResponse>builder()
+                        .code(1000)
                         .message("Get mission successfully")
-                        .result(missionService.getMissionById(missionId))
-                        .build());
+                        .result(result)
+                        .build()
+        );
     }
+
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
@@ -107,16 +140,49 @@ public class MissionController {
     }
 
     @PostMapping("/{missionId}/results")
-    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
+    @PreAuthorize(
+            "hasAnyRole('ADMIN', 'OPERATOR') or " +
+                    "hasAuthority('SCOPE_mission:results')"
+    )
     public ResponseEntity<ApiResponse<MissionResponse>> receiveMissionResults(
             @PathVariable UUID missionId,
-            @Valid @RequestBody MissionResultRequest request
+            @Valid @RequestBody MissionResultRequest request,
+            Authentication authentication,
+            @AuthenticationPrincipal Jwt jwt
     ) {
-        return ResponseEntity.status(HttpStatus.OK)
-                .body(ApiResponse.<MissionResponse>builder()
+        boolean isOperator = authentication.getAuthorities().stream()
+                .anyMatch(authority ->
+                        authority.getAuthority().equals("ROLE_ADMIN")
+                                || authority.getAuthority().equals("ROLE_OPERATOR")
+                );
+
+        MissionResponse result;
+
+        if (isOperator) {
+            // ADMIN / OPERATOR
+            result = missionService.receiveMissionResults(
+                    missionId,
+                    request
+            );
+        } else {
+            // UAV Simulator
+            String clientId = jwt != null
+                    ? jwt.getClaimAsString("client_id")
+                    : null;
+
+            result = missionService.receiveMissionResults(
+                    missionId,
+                    request,
+                    clientId
+            );
+        }
+
+        return ResponseEntity.ok(
+                ApiResponse.<MissionResponse>builder()
                         .message("Receive mission results successfully")
-                        .result(missionService.receiveMissionResults(missionId, request))
-                        .build());
+                        .result(result)
+                        .build()
+        );
     }
 
     @PostMapping("/{missionId}/plan")

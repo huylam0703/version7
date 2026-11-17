@@ -59,6 +59,9 @@ springdoc:
 integration:
   farm-device:
     base-url: ${FARM_DEVICE_BASE_URL:http://localhost:8082}
+
+  simulator:
+    client-id: ${UAV_CLIENT_ID:uav-simulator-01}
 mission:
   reference-validation:
     mode: ${MISSION_REFERENCE_VALIDATION_MODE:remote}
