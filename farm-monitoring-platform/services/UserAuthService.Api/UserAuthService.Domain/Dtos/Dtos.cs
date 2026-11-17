@@ -42,4 +42,8 @@ public sealed class ServiceTokenResponse
 
     [JsonPropertyName("expires_in")]
     public int ExpiresIn { get; init; }
+
+    [JsonPropertyName("scope")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Scope { get; init; }
 }

@@ -46,4 +46,16 @@ public static class UserAuthErrors
     /// 
     /// </summary>
     public const string UnsupportedGrantType = "UNSUPPORTED_GRANT_TYPE";
+    /// <summary>
+    /// 
+    /// </summary>
+    public const string InvalidScope = "INVALID_SCOPE";
+    /// <summary>
+    /// 
+    /// </summary>
+    public const string ClientExists = "CLIENT_EXISTS";
+    /// <summary>
+    /// 
+    /// </summary>
+    public const string ClientNotFound = "CLIENT_NOT_FOUND";
 }

@@ -37,8 +37,9 @@ public static class DependencyInjectionExtension
         services.AddSingleton<IHashUtilities, HashUtilities>();
         services.AddSingleton<IServiceClientStore, ConfigServiceClientStore>();
         services.AddSingleton<IRefreshTokenService, RefreshTokenService>();
-        services.AddScoped<DbInitializer>();
+        services.AddSingleton<ISimulatorClientService, SimulatorClientService>();
 
+        services.AddScoped<DbInitializer>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IUnitOfWork, NoOpUnitOfWork>();
 

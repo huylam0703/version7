@@ -74,6 +74,8 @@ services:
       CoreAppSetting__ConnectionStringSetting__UserAuthService: "Server=sqlserver;Database=user_auth_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};MultipleActiveResultSets=true;TrustServerCertificate=True"
     volumes: ["../keys:/app/keys:ro"]
     ports: ["8081:8080"]
+    networks:
+      - farm-network
   notification-service:
     entrypoint: ["dotnet", "NotificationService.Api.dll"]
     build:
@@ -93,6 +95,8 @@ services:
       Jwt__Audience: "farm-api"
       Jwt__MetadataAddress: "http://user-auth-service:8080/.well-known/openid-configuration"
     ports: ["8086:8080"]
+    networks:
+      - farm-network
 
 
   api-gateway:
