@@ -1,0 +1,40 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: uav-gateway-simulator
+
+  profiles:
+    active: dev
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+
+integration:
+  mission:
+    base-url: ${MISSION_SERVICE_BASE_URL:http://localhost:8083/api/v1/mission}
+
+  farm-device:
+    base-url: ${FARM_DEVICE_BASE_URL:http://localhost:8082}
+  auth:
+    token-url: ${AUTH_TOKEN_URL:http://localhost:8080/oauth2/token}
+    client-id: ${UAV_CLIENT_ID:uav-simulator-01}
+    client-secret: ${UAV_CLIENT_SECRET:}
+    scope: "mission:read mission:ack mission:progress mission:heartbeat mission:results"
+
+simulator:
+  id: uav-simulator-01
+  mission:
+    enabled: false
+  results:
+    retry:
+      enabled: true
+      delay-ms: 5000
+      max-attempts: 3
+
+  flight:
+    waypoint-delay-ms: 3000
+  heartbeat:
+    interval-ms: 10000
