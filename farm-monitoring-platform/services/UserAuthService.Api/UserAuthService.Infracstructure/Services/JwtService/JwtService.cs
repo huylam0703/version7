@@ -54,6 +54,24 @@ public class JwtService : IJwtService
             TimeSpan.FromMinutes(_options.Value.Jwt!.ExpireTime > 0 ? _options.Value.Jwt!.ExpireTime : 30));
 
     /// <summary>
+    /// Không có claim role
+    /// </summary>
+    /// <param name="clientId"></param>
+    /// <param name="scopes"></param>
+    /// <returns></returns>
+    public AccessTokenDto CreateClientToken(string clientId, IReadOnlyCollection<string> scopes)
+    => Create(
+        new Dictionary<string, object>
+        {
+            ["sub"] = clientId,
+            ["client_id"] = clientId,
+            ["scope"] = string.Join(' ', scopes),
+            ["jti"] = Guid.NewGuid().ToString()
+        },
+        TimeSpan.FromMinutes(_options.Value.Jwt!.ClientTokenExpireTime > 0
+            ? _options.Value.Jwt!.ClientTokenExpireTime : 60));
+
+    /// <summary>
     /// 
     /// </summary>
     /// <param name="clientId"></param>

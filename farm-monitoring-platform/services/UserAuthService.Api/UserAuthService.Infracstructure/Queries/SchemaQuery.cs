@@ -60,6 +60,24 @@ public static class SchemaQuery
             CREATE INDEX IX_UA_RefreshTokens_UserId ON UA_RefreshTokens (UserId, RevokedAt)
 
         END;
+
+        IF OBJECT_ID(N'UA_SimulatorClients', N'U') IS NULL
+        BEGIN
+            CREATE TABLE UA_SimulatorClients (
+                ClientRowId     UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+                ClientId        VARCHAR(100)     NOT NULL,
+                DisplayName     NVARCHAR(150)    NULL,
+                SecretHash      VARCHAR(64)      NOT NULL,   -- SHA-256 hex; không lưu secret gốc
+                AllowedScopes   VARCHAR(500)     NOT NULL,   -- các scope cách nhau bằng dấu cách
+                IsActive        BIT              NOT NULL DEFAULT 1,
+                SecretRotatedAt DATETIME2(0)     NULL,
+                RevokedAt       DATETIME2(0)     NULL,
+                CreatedAt       DATETIME2(0)     NOT NULL DEFAULT SYSUTCDATETIME(),
+                UpdatedAt       DATETIME2(0)     NOT NULL DEFAULT SYSUTCDATETIME(),
+                CONSTRAINT PK_UA_SimulatorClients PRIMARY KEY (ClientRowId),
+                CONSTRAINT UQ_UA_SimulatorClients_ClientId UNIQUE (ClientId)
+            );
+        END;
     ";
 
     /// <summary>

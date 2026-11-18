@@ -19,6 +19,7 @@ public class CoreAppSetting
     /// 
     /// </summary>
     public List<ServiceClientSetting>? ServiceClients { get; set; }
+
 }
 
 public class ConnectionStringSetting
@@ -59,6 +60,10 @@ public class JwtSetting
     /// 
     /// </summary>
     public string? KeyId { get; set; }
+    /// <summary>
+    /// Thời hạn token của Simulator (phút)
+    /// </summary>
+    public int ClientTokenExpireTime { get; set; } = 60;
 }
 
 public class SeedSetting

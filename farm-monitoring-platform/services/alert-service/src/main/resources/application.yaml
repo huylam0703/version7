@@ -1,12 +1,33 @@
+server:
+  port: 8085
+  servlet:
+    context-path: /api/v1/alert
+
 spring:
   application:
     name: alert-service
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
-  datasource:
-    url: jdbc:sqlserver://${DB_HOST:localhost}:${DB_PORT:1433};databaseName=${DB_NAME:farm_alert_db};encrypt=true;trustServerCertificate=true
-    username: ${DB_USER:MSI}
-    password: ${DB_PASSWORD}
 
-server:
-  port: ${SERVER_PORT:8084}
+  datasource:
+    url: jdbc:sqlserver://localhost:14330;databaseName=alert_db;encrypt=true;trustServerCertificate=true
+    username: sa
+    password: ${MSSQL_SA_PASSWORD}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.SQLServerDialect
+
+  flyway:
+    enabled: false
+
+management:
+  health:
+    rabbit:
+      enabled: false
+farm:
+  security:
+    enabled: false

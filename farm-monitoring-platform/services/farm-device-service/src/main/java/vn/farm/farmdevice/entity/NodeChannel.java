@@ -8,7 +8,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "NodeChannels",
+@Table(name = "FD_NodeChannels",
         uniqueConstraints = @UniqueConstraint(name = "UQ_FD_NodeChannels_Node_Type", columnNames = {"NodeId", "TypeId"}))
 @Getter
 @Setter

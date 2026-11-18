@@ -8,7 +8,7 @@ import org.hibernate.annotations.Nationalized;
 import vn.farm.starter.jpa.AuditableEntity;
 
 @Entity
-@Table(name = "Uavs",
+@Table(name = "FD_Uavs",
         uniqueConstraints = @UniqueConstraint(name = "UQ_FD_Uavs_SerialNo", columnNames = "SerialNo"))
 @Getter
 @Setter
