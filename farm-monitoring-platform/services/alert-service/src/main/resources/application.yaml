@@ -7,6 +7,17 @@ spring:
   application:
     name: alert-service
 
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
   datasource:
     url: jdbc:sqlserver://localhost:14330;databaseName=alert_db;encrypt=true;trustServerCertificate=true
     username: sa
