@@ -18,6 +18,7 @@ public class MissionResultSimulationService {
 
     private final MissionClient missionClient;
     private final MissionResultPayloadStore payloadStore;
+    private final RecoveryLeaseRegistry leaseRegistry;
 
     public MissionResultResponse simulateResults(
             UUID missionId,
@@ -29,6 +30,8 @@ public class MissionResultSimulationService {
                     "MissionId and ExecutionId must not be null"
             );
         }
+        // Không cho phép gửi Results nếu Recovery đã mất quyền.
+        leaseRegistry.getForWrite(executionId);
 
         if (nodeIds == null || nodeIds.isEmpty()) {
             throw new IllegalArgumentException(
@@ -70,6 +73,7 @@ public class MissionResultSimulationService {
     }
 
     public MissionResultResponse retryResults(UUID executionId) {
+        leaseRegistry.getForWrite(executionId);
         MissionResultPayloadStore.PendingResult pending =
                 payloadStore.get(executionId);
 
@@ -83,15 +87,21 @@ public class MissionResultSimulationService {
         return sendPendingResults(pending);
     }
 
+
     private MissionResultResponse sendPendingResults(
             MissionResultPayloadStore.PendingResult pending
     ) {
         UUID missionId = pending.missionId();
+        UUID executionId = pending.request().executionId();
+
+        // Kiểm tra lease trước mỗi lần gửi Results.
+        // MissionClient sẽ gắn ownership vào HTTP request.
+        leaseRegistry.getForWrite(executionId);
 
         log.info(
                 "Sending Mission Results: missionId={}, executionId={}",
                 missionId,
-                pending.request().executionId()
+                executionId
         );
 
         MissionResultResponse response = missionClient.sendResults(
@@ -101,23 +111,27 @@ public class MissionResultSimulationService {
 
         if (response == null
                 || !missionId.equals(response.missionId())
-                || !pending.request().executionId()
-                .equals(response.executionId())
-                || !"COMPLETED".equals(response.status())) {
+                || !executionId.equals(response.executionId())
+                || (!"COMPLETED".equals(response.status())
+                && !"PARTIAL".equals(response.status())
+                && !"FAILED".equals(response.status()))) {
+
             throw new IllegalStateException(
                     "Mission Results response is invalid"
             );
         }
 
         log.info(
-                "Mission Results confirmed: missionId={}, executionId={}",
+                "Mission Results confirmed: missionId={}, executionId={}, status={}",
                 missionId,
-                pending.request().executionId()
+                executionId,
+                response.status()
         );
 
-        // Chưa xóa payload tại đây.
-        // Payload sẽ được xóa sau khi tracker
+        // Không xóa payload ở đây.
+        // MissionProcessingService sẽ xóa sau khi tracker
         // xác nhận COMPLETED.
         return response;
     }
+
 }

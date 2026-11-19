@@ -14,10 +14,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import vn.farm.core.api.ApiResponse;
-import vn.farm.mission.dto.request.CreateMissionRequest;
-import vn.farm.mission.dto.request.MissionAckRequest;
-import vn.farm.mission.dto.request.MissionResultRequest;
-import vn.farm.mission.dto.request.UpdateMissionRequest;
+import vn.farm.mission.dto.request.*;
 import vn.farm.mission.dto.response.*;
 import vn.farm.mission.entity.MissionStatus;
 import vn.farm.mission.service.MissionService;
@@ -239,6 +236,61 @@ public class MissionController {
         return ApiResponse.<MissionAckResponse>builder()
                 .message("Mission acknowledged successfully")
                 .result(response)
+                .build();
+    }
+
+    @GetMapping("/recoverable")
+    @PreAuthorize("hasAuthority('SCOPE_mission:read')")
+    public ApiResponse<List<RecoverableMissionResponse>> getRecoverableMissions(
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        String clientId = jwt.getClaimAsString("client_id");
+
+        List<RecoverableMissionResponse> result =
+                missionService.getRecoverableMissions(clientId);
+
+        return ApiResponse.<List<RecoverableMissionResponse>>builder()
+                .code(1000)
+                .message("Get recoverable missions successfully")
+                .result(result)
+                .build();
+    }
+
+    @PostMapping("/{missionId}/recovery-claim")
+    @PreAuthorize("hasAuthority('SCOPE_mission:read')")
+    public ApiResponse<MissionRecoveryClaimResponse> claimRecovery(
+            @PathVariable UUID missionId,
+            @Valid @RequestBody MissionRecoveryClaimRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        String clientId = jwt.getClaimAsString("client_id");
+
+        return ApiResponse.<MissionRecoveryClaimResponse>builder()
+                .code(1000)
+                .message("Mission recovery claimed successfully")
+                .result(missionService.claimRecovery(
+                        missionId,
+                        request,
+                        clientId
+                ))
+                .build();
+    }
+
+    @PostMapping("/{missionId}/recovery-renew")
+    @PreAuthorize("hasAuthority('SCOPE_mission:read')")
+    public ApiResponse<MissionRecoveryClaimResponse> renewRecoveryLease(
+            @PathVariable UUID missionId,
+            @Valid @RequestBody MissionRecoveryRenewRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ApiResponse.<MissionRecoveryClaimResponse>builder()
+                .code(1000)
+                .message("Recovery lease renewed successfully")
+                .result(missionService.renewRecoveryLease(
+                        missionId,
+                        request,
+                        jwt.getClaimAsString("client_id")
+                ))
                 .build();
     }
 }

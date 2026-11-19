@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
 
 import java.time.Instant;
 import java.util.*;
@@ -21,6 +22,7 @@ public class MissionExecutionService {
     private final MissionResultSimulationService missionResultSimulationService;
     private final MissionExecutionTracker executionTracker;
     private final MissionResumePlanner missionResumePlanner;
+    private final MissionRecoveryLeaseManager leaseManager;
 
     public void prepareMission(MissionReadyPayload payload) {
 
@@ -201,6 +203,8 @@ public class MissionExecutionService {
             // Waypoints are completed.
             // Do not restart the entire mission if Results fail.
             executionTracker.markResultsPending(executionId);
+            // Waypoints completed. Recovery ownership must still be valid.
+            leaseManager.requireValidLease(executionId);
 
             log.info(
                     "Mission Results pending: missionId={}, executionId={}",
@@ -317,6 +321,8 @@ public class MissionExecutionService {
         UUID missionId = payload.getMissionId();
         UUID executionId = payload.getExecutionId();
 
+        leaseManager.requireValidLease(executionId);
+
         MissionResumePlan plan =
                 missionResumePlanner.createPlan(missionId, executionId);
 
@@ -417,7 +423,8 @@ public class MissionExecutionService {
                     latestPlan
             );
 
-
+            // Waypoints completed. Recovery ownership must still be valid.
+            leaseManager.requireValidLease(executionId);
             executionTracker.markResultsPending(executionId);
 
             try {
@@ -439,8 +446,22 @@ public class MissionExecutionService {
                     );
                 }
 
+            } catch (RecoveryOwnershipLostException e) {
+
+                executionTracker.failDueToOwnershipLoss(executionId);
+
+                log.error(
+                        "Recovery Results stopped due to ownership loss: executionId={}",
+                        executionId,
+                        e
+                );
+
+                throw e;
+
             } catch (Exception e) {
+
                 executionTracker.markResultsRetry(executionId);
+
                 throw e;
             }
 

@@ -3,6 +3,7 @@ package vn.farm.mission.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -30,10 +31,22 @@ public class MissionHeartbeatController {
             @AuthenticationPrincipal Jwt jwt
     ) {
 
-        // 1. Lấy clientId từ JWT
+        // 1. Validate JWT and client_id
+        if (jwt == null) {
+            throw new AccessDeniedException(
+                    "UAV authentication is required"
+            );
+        }
+
         String clientId = jwt.getClaimAsString("client_id");
 
-        // 2. Xử lý Heartbeat
+        if (clientId == null || clientId.isBlank()) {
+            throw new AccessDeniedException(
+                    "Missing UAV client_id"
+            );
+        }
+
+        // 2. Process heartbeat
         MissionHeartbeatResponse result =
                 heartbeatService.receiveHeartbeat(
                         missionId,
@@ -41,7 +54,7 @@ public class MissionHeartbeatController {
                         clientId
                 );
 
-        // 3. Trả response
+        // 3. Return response
         return ResponseEntity.ok(
                 ApiResponse.<MissionHeartbeatResponse>builder()
                         .code(1000)

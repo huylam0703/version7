@@ -9,6 +9,7 @@ import uav_gateway_simulator.dto.MissionProgressRequest;
 import uav_gateway_simulator.dto.MissionProgressResponse;
 import uav_gateway_simulator.dto.MissionResumePlan;
 import uav_gateway_simulator.dto.WaypointResponse;
+import jakarta.annotation.PostConstruct;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -21,6 +22,7 @@ import java.util.UUID;
 public class WaypointSimulationService {
 
     private final MissionClient missionClient;
+    private final RecoveryLeaseRegistry leaseRegistry;
 
     @Value("${simulator.flight.waypoint-delay-ms:3000}")
     private long waypointDelayMs;
@@ -60,6 +62,8 @@ public class WaypointSimulationService {
                         e
                 );
             }
+            // Kiểm tra trạng thái Recovery trước khi gửi Progress.
+            leaseRegistry.getForWrite(executionId);
 
             log.info(
                     "Waypoint reached: missionId={}, waypointId={}, seq={}",
@@ -132,6 +136,11 @@ public class WaypointSimulationService {
                 || !executionId.equals(plan.executionId())) {
             throw new IllegalArgumentException(
                     "Invalid mission resume plan"
+            );
+        }
+        if (leaseRegistry.getForWrite(executionId) == null) {
+            throw new IllegalStateException(
+                    "Recovery lease is required: " + executionId
             );
         }
 
@@ -207,6 +216,8 @@ public class WaypointSimulationService {
                         "Waypoint resume interrupted", e
                 );
             }
+            // Recovery phải còn quyền sở hữu execution.
+            leaseRegistry.getForWrite(executionId);
 
             MissionProgressRequest request =
                     new MissionProgressRequest(
@@ -245,6 +256,13 @@ public class WaypointSimulationService {
         log.info(
                 "Waypoint resume completed: executionId={}",
                 executionId
+        );
+    }
+    @PostConstruct
+    public void init() {
+        log.info(
+                "[SIMULATOR CONFIG] waypointDelayMs={}",
+                waypointDelayMs
         );
     }
 

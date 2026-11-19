@@ -21,6 +21,8 @@ public class MissionExecutionTracker {
 
     private final ConcurrentMap<UUID, Status> executions =
             new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, Status> recoveryPreviousStatuses =
+            new ConcurrentHashMap<>();
 
     public boolean tryStart(UUID executionId) {
         if (executionId == null) {
@@ -88,15 +90,28 @@ public class MissionExecutionTracker {
         );
     }
 
-
-
     public void fail(UUID executionId) {
-        executions.replace(
+
+        if (executionId == null) {
+            return;
+        }
+
+        executions.computeIfPresent(
                 executionId,
-                Status.PROCESSING,
-                Status.FAILED
+                (id, status) -> {
+                    if (status == Status.COMPLETED) {
+                        return status;
+                    }
+
+                    if (status == Status.RESULTS_RETRY) {
+                        return status;
+                    }
+
+                    return Status.FAILED;
+                }
         );
     }
+
 
 
     public Status getStatus(UUID executionId) {
@@ -112,30 +127,80 @@ public class MissionExecutionTracker {
     }
 
 
+
     public boolean tryStartRecovery(UUID executionId) {
+
         if (executionId == null) {
             throw new IllegalArgumentException(
                     "ExecutionId must not be null"
             );
         }
 
-        return executions.replace(
+        Status existing = executions.putIfAbsent(
+                executionId,
+                Status.PROCESSING
+        );
+
+        if (existing == null) {
+            return true;
+        }
+
+        if (executions.replace(
                 executionId,
                 Status.FAILED,
                 Status.PROCESSING
-        );
+        )) {
+            recoveryPreviousStatuses.put(executionId, Status.FAILED);
+            return true;
+        }
+
+        return false;
     }
+
+
     public boolean rollbackRecovery(UUID executionId) {
+
         if (executionId == null) {
             throw new IllegalArgumentException(
                     "ExecutionId must not be null"
             );
         }
 
-        return executions.replace(
+        Status previousStatus =
+                recoveryPreviousStatuses.remove(executionId);
+
+        if (previousStatus == Status.FAILED) {
+            return executions.replace(
+                    executionId,
+                    Status.PROCESSING,
+                    Status.FAILED
+            );
+        }
+
+        return executions.remove(
                 executionId,
-                Status.PROCESSING,
-                Status.FAILED
+                Status.PROCESSING
         );
     }
+
+    public void failDueToOwnershipLoss(UUID executionId) {
+
+        if (executionId == null) {
+            return;
+        }
+
+        executions.computeIfPresent(
+                executionId,
+                (id, status) ->
+                        status == Status.COMPLETED
+                                ? status
+                                : Status.FAILED
+        );
+    }
+    public void clearRecoveryTracking(UUID executionId) {
+        if (executionId != null) {
+            recoveryPreviousStatuses.remove(executionId);
+        }
+    }
+
 }

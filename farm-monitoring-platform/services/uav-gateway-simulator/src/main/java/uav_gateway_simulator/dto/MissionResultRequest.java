@@ -6,6 +6,21 @@ import java.util.UUID;
 public record MissionResultRequest(
         UUID executionId,
         List<MissionNodeResultRequest> results,
-        Boolean completed
+        Boolean completed,
+        UUID instanceId,
+        Long recoveryGeneration
 ) {
+    public MissionResultRequest(
+            UUID executionId,
+            List<MissionNodeResultRequest> results,
+            Boolean completed
+    ) {
+        this(
+                executionId,
+                results,
+                completed,
+                null,
+                null
+        );
+    }
 }

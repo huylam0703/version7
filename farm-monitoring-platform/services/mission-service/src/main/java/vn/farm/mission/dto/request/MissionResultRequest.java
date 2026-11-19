@@ -24,4 +24,6 @@ public class MissionResultRequest {
 
     @NotNull
     UUID executionId;
+    private UUID instanceId;
+    private Long recoveryGeneration;
 }

@@ -34,9 +34,13 @@ class MissionHeartbeatSchedulerTest {
 
         executor = Executors.newScheduledThreadPool(2);
 
+        RecoveryLeaseRegistry leaseRegistry =
+                new RecoveryLeaseRegistry();
+
         scheduler = new MissionHeartbeatScheduler(
                 missionClient,
-                executor
+                executor,
+                leaseRegistry
         );
 
         ReflectionTestUtils.setField(

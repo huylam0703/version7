@@ -26,6 +26,8 @@ public class MissionProgressService {
     private final MissionExecutionRepository executionRepository;
     private final WaypointRepository waypointRepository;
     private final MissionNodeRepository missionNodeRepository;
+    private final MissionRecoveryOwnershipValidator ownershipValidator;
+    private final MissionExecutionLockService executionLockService;
 
     // =====================================================
     // POST - UPDATE MISSION PROGRESS (ADMIN / OPERATOR)
@@ -36,12 +38,10 @@ public class MissionProgressService {
             UUID missionId,
             MissionProgressRequest request
     ) {
-        MissionExecution execution = executionRepository
-                .findForProgress(request.getExecutionId(), missionId)
-                .orElseThrow(() -> BusinessException.notFound(
-                        "EXECUTION_NOT_FOUND",
-                        "Không tìm thấy Mission Execution"
-                ));
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
 
         return processProgress(missionId, request, execution);
     }
@@ -63,12 +63,10 @@ public class MissionProgressService {
             );
         }
 
-        MissionExecution execution = executionRepository
-                .findForProgress(request.getExecutionId(), missionId)
-                .orElseThrow(() -> BusinessException.notFound(
-                        "EXECUTION_NOT_FOUND",
-                        "Không tìm thấy Mission Execution"
-                ));
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
 
         if (!clientId.equals(execution.getAssignedClientId())) {
             throw BusinessException.invalid(
@@ -76,6 +74,11 @@ public class MissionProgressService {
                     "Simulator không được phân công Mission này"
             );
         }
+        ownershipValidator.validate(
+                execution,
+                request.getInstanceId(),
+                request.getRecoveryGeneration()
+        );
 
         return processProgress(missionId, request, execution);
     }

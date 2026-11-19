@@ -37,13 +37,16 @@ class MissionResultsRetrySchedulerTest {
 
         executor = Executors.newSingleThreadScheduledExecutor();
 
+        MissionRecoveryLeaseManager leaseManager =
+                mock(MissionRecoveryLeaseManager.class);
+
         retryScheduler = new MissionResultsRetryScheduler(
                 tracker,
                 resultService,
                 payloadStore,
+                leaseManager,
                 executor
         );
-
         ReflectionTestUtils.setField(
                 retryScheduler, "retryEnabled", true
         );

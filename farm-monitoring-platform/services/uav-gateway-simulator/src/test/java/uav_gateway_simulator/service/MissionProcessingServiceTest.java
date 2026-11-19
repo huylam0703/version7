@@ -4,6 +4,8 @@ package uav_gateway_simulator.service;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import uav_gateway_simulator.client.MissionClient;
+import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
 import uav_gateway_simulator.dto.MissionResultRequest;
 import uav_gateway_simulator.dto.MissionNodeResultRequest;
@@ -41,6 +43,16 @@ class MissionProcessingServiceTest {
 
         retryScheduler =
                 mock(MissionResultsRetryScheduler.class);
+        MissionClient missionClient = mock(MissionClient.class);
+
+        MissionRecoveryLeaseManager leaseManager =
+                mock(MissionRecoveryLeaseManager.class);
+
+        SimulatorInstanceIdentity instanceIdentity =
+                mock(SimulatorInstanceIdentity.class);
+
+        RecoveryLeaseRegistry leaseRegistry =
+                new RecoveryLeaseRegistry();
 
         payloadStore = new MissionResultPayloadStore();
 
@@ -50,7 +62,11 @@ class MissionProcessingServiceTest {
                 resultSimulationService,
                 payloadStore,
                 executor,
-                retryScheduler
+                retryScheduler,
+                missionClient,
+                leaseManager,
+                instanceIdentity,
+                leaseRegistry
         );
     }
 

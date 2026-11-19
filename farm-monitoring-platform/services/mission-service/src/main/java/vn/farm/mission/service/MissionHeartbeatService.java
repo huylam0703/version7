@@ -20,6 +20,8 @@ import java.util.UUID;
 public class MissionHeartbeatService {
 
     private final MissionExecutionRepository executionRepository;
+    private final MissionRecoveryOwnershipValidator ownershipValidator;
+    private final MissionExecutionLockService executionLockService;
 
     @Transactional
     public MissionHeartbeatResponse receiveHeartbeat(
@@ -29,12 +31,10 @@ public class MissionHeartbeatService {
     ) {
 
         // 1. Tìm và khóa Mission Execution
-        MissionExecution execution = executionRepository
-                .findForProgress(request.getExecutionId(), missionId)
-                .orElseThrow(() -> BusinessException.notFound(
-                        "EXECUTION_NOT_FOUND",
-                        "Không tìm thấy Mission Execution"
-                ));
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
 
         Mission mission = execution.getMission();
 
@@ -64,6 +64,11 @@ public class MissionHeartbeatService {
                     "UAV Client không được phép gửi Heartbeat cho Execution này"
             );
         }
+        ownershipValidator.validate(
+                execution,
+                request.getInstanceId(),
+                request.getRecoveryGeneration()
+        );
 
         // 5. Cập nhật thời gian Heartbeat
         Instant now = Instant.now();

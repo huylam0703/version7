@@ -63,4 +63,14 @@ public class MissionExecution {
     @Version
     @Column(name = "Version")
     Long version;
+
+    @Column(name = "RecoveryOwnerId", length = 100)
+    String recoveryOwnerId;
+
+    @Column(name = "RecoveryLeaseUntil", columnDefinition = "datetime2(3)")
+    Instant recoveryLeaseUntil;
+
+    @Column(name = "RecoveryGeneration", nullable = false)
+    @Builder.Default
+    long recoveryGeneration = 0L;
 }

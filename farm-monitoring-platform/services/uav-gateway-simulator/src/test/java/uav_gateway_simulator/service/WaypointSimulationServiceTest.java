@@ -27,7 +27,13 @@ class WaypointSimulationServiceTest {
     @BeforeEach
     void setUp() {
         missionClient = mock(MissionClient.class);
-        simulationService = new WaypointSimulationService(missionClient);
+        RecoveryLeaseRegistry leaseRegistry =
+                new RecoveryLeaseRegistry();
+
+        simulationService = new WaypointSimulationService(
+                missionClient,
+                leaseRegistry
+        );
 
         ReflectionTestUtils.setField(
                 simulationService,

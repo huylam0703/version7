@@ -33,9 +33,13 @@ class MissionResultSimulationServiceTest {
         MissionResultPayloadStore payloadStore =
                 new MissionResultPayloadStore();
 
+        RecoveryLeaseRegistry leaseRegistry =
+                new RecoveryLeaseRegistry();
+
         service = new MissionResultSimulationService(
                 missionClient,
-                payloadStore
+                payloadStore,
+                leaseRegistry
         );
 
         missionId = UUID.randomUUID();

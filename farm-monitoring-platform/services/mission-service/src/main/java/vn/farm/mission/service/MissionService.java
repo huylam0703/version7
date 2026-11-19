@@ -49,6 +49,8 @@ public class MissionService {
     final MissionExecutionRepository missionExecutionRepository;
     final MissionOutboxService missionOutboxService;
     final SimulatorProperties simulatorProperties;
+    final MissionRecoveryOwnershipValidator ownershipValidator;
+    final MissionExecutionLockService executionLockService;
 
     @Transactional
     public MissionResponse createMission(CreateMissionRequest request) {
@@ -378,6 +380,18 @@ public class MissionService {
             UUID missionId,
             MissionResultRequest request
     ) {
+        if (request.getExecutionId() == null) {
+            throw BusinessException.invalid(
+                    "EXECUTION_ID_REQUIRED",
+                    "ExecutionId không được để trống"
+            );
+        }
+
+        executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
+
         return processMissionResults(missionId, request);
     }
     @Transactional
@@ -400,14 +414,11 @@ public class MissionService {
             );
         }
 
-        MissionExecution execution =
-                missionExecutionRepository.findForProgress(
-                        request.getExecutionId(),
-                        missionId
-                ).orElseThrow(() -> BusinessException.notFound(
-                        "EXECUTION_NOT_FOUND",
-                        "Không tìm thấy Execution thuộc Mission"
-                ));
+        // Khóa Mission trước, Execution sau
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
 
         if (!clientId.equals(execution.getAssignedClientId())) {
             throw BusinessException.invalid(
@@ -415,6 +426,12 @@ public class MissionService {
                     "Simulator không được phân công Mission này"
             );
         }
+
+        ownershipValidator.validate(
+                execution,
+                request.getInstanceId(),
+                request.getRecoveryGeneration()
+        );
 
         return processMissionResults(missionId, request);
     }
@@ -1262,6 +1279,187 @@ public class MissionService {
                 execution.getAcknowledgedAt(),
                 execution.getLastHeartbeatAt()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<RecoverableMissionResponse> getRecoverableMissions(
+            String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        Instant heartbeatCutoff = Instant.now().minusSeconds(30);
+
+        return missionExecutionRepository.findRecoveryCandidates(
+                        clientId,
+                        MissionExecutionStatus.EXECUTING,
+                        MissionStatus.RUNNING,
+                        heartbeatCutoff
+                ).stream()
+                .map(execution -> {
+                    Mission mission = execution.getMission();
+
+                    return new RecoverableMissionResponse(
+                            mission.getMissionId(),
+                            execution.getExecutionId(),
+                            mission.getFarmId(),
+                            mission.getUavId(),
+                            mission.getGatewayId()
+                    );
+                })
+                .toList();
+    }
+
+    @Transactional
+    public MissionRecoveryClaimResponse claimRecovery(
+            UUID missionId,
+            MissionRecoveryClaimRequest request,
+            String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.executionId()
+        );
+
+        Mission mission = execution.getMission();
+
+        if (!clientId.equals(execution.getAssignedClientId())) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_NOT_ASSIGNED",
+                    "Simulator không được phân công Mission này"
+            );
+        }
+
+        if (mission.getStatus() != MissionStatus.RUNNING
+                || execution.getStatus() != MissionExecutionStatus.EXECUTING) {
+            throw BusinessException.invalid(
+                    "MISSION_NOT_RECOVERABLE",
+                    "Mission không ở trạng thái có thể Recovery"
+            );
+        }
+
+        Instant now = Instant.now();
+
+        if (execution.getLastHeartbeatAt() != null
+                && !execution.getLastHeartbeatAt()
+                .isBefore(now.minusSeconds(30))) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_STILL_ACTIVE",
+                    "Heartbeat vẫn còn hoạt động"
+            );
+        }
+
+        if (execution.getRecoveryLeaseUntil() != null
+                && execution.getRecoveryLeaseUntil().isAfter(now)) {
+            throw BusinessException.invalid(
+                    "RECOVERY_ALREADY_CLAIMED",
+                    "Execution đang được một instance khác sở hữu"
+            );
+        }
+
+        long generation = execution.getRecoveryGeneration() + 1;
+        Instant leaseUntil = now.plusSeconds(60);
+
+        execution.setRecoveryOwnerId(request.instanceId().toString());
+        execution.setRecoveryLeaseUntil(leaseUntil);
+        execution.setRecoveryGeneration(generation);
+
+        missionExecutionRepository.save(execution);
+
+        return new MissionRecoveryClaimResponse(
+                missionId,
+                execution.getExecutionId(),
+                request.instanceId(),
+                generation,
+                leaseUntil
+        );
+    }
+
+    @Transactional
+    public MissionRecoveryClaimResponse renewRecoveryLease(
+            UUID missionId,
+            MissionRecoveryRenewRequest request,
+            String clientId
+    ) {
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.executionId()
+        );
+
+        Instant now = Instant.now();
+
+        if (clientId == null
+                || !clientId.equals(execution.getAssignedClientId())
+                || !request.instanceId().toString()
+                .equals(execution.getRecoveryOwnerId())
+                || request.recoveryGeneration()
+                != execution.getRecoveryGeneration()) {
+            throw BusinessException.invalid(
+                    "RECOVERY_OWNERSHIP_MISMATCH",
+                    "Simulator không sở hữu Recovery này"
+            );
+        }
+
+        if (execution.getMission().getStatus() != MissionStatus.RUNNING
+                || execution.getStatus() != MissionExecutionStatus.EXECUTING) {
+            throw BusinessException.invalid(
+                    "MISSION_NOT_EXECUTING",
+                    "Mission không còn thực thi"
+            );
+        }
+
+        if (execution.getRecoveryLeaseUntil() == null
+                || !execution.getRecoveryLeaseUntil().isAfter(now)) {
+            throw BusinessException.invalid(
+                    "RECOVERY_LEASE_EXPIRED",
+                    "Recovery lease đã hết hạn"
+            );
+        }
+
+        Instant leaseUntil = now.plusSeconds(60);
+        execution.setRecoveryLeaseUntil(leaseUntil);
+
+        missionExecutionRepository.save(execution);
+
+        return new MissionRecoveryClaimResponse(
+                missionId,
+                execution.getExecutionId(),
+                request.instanceId(),
+                execution.getRecoveryGeneration(),
+                leaseUntil
+        );
+    }
+
+    private void validateRecoveryOwnership(
+            MissionExecution execution,
+            UUID instanceId,
+            long generation
+    ) {
+        if (execution.getRecoveryOwnerId() == null) {
+            return;
+        }
+
+        if (instanceId == null
+                || !execution.getRecoveryOwnerId().equals(instanceId.toString())
+                || execution.getRecoveryGeneration() != generation
+                || execution.getRecoveryLeaseUntil() == null
+                || !execution.getRecoveryLeaseUntil().isAfter(Instant.now())) {
+            throw BusinessException.invalid(
+                    "RECOVERY_OWNERSHIP_MISMATCH",
+                    "Simulator không còn quyền cập nhật execution"
+            );
+        }
     }
 
 }

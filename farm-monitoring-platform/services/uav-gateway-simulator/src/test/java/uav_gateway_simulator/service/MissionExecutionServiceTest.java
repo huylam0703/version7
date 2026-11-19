@@ -33,6 +33,8 @@ class MissionExecutionServiceTest {
 
     private MissionReadyPayload payload;
     private MissionDetailResponse mission;
+    private MissionResumePlanner missionResumePlanner;
+    private MissionRecoveryLeaseManager leaseManager;
 
     @BeforeEach
     void setUp() {
@@ -44,13 +46,17 @@ class MissionExecutionServiceTest {
         missionResultSimulationService =
                 mock(MissionResultSimulationService.class);
         executionTracker = new MissionExecutionTracker();
+        missionResumePlanner = mock(MissionResumePlanner.class);
+        leaseManager = mock(MissionRecoveryLeaseManager.class);
 
         missionExecutionService = new MissionExecutionService(
                 missionClient,
                 waypointSimulationService,
                 heartbeatScheduler,
                 missionResultSimulationService,
-                executionTracker
+                executionTracker,
+                missionResumePlanner,
+                leaseManager
         );
 
         missionId = UUID.randomUUID();

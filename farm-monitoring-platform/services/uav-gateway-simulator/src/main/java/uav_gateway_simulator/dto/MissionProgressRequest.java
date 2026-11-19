@@ -9,6 +9,25 @@ public record MissionProgressRequest(
         long sequence,
         Short waypointSeq,
         Instant reachedAt,
-        List<Object> nodeResults
+        List<Object> nodeResults,
+        UUID instanceId,
+        Long recoveryGeneration
 ) {
+    public MissionProgressRequest(
+            UUID executionId,
+            long sequence,
+            Short waypointSeq,
+            Instant reachedAt,
+            List<Object> nodeResults
+    ) {
+        this(
+                executionId,
+                sequence,
+                waypointSeq,
+                reachedAt,
+                nodeResults,
+                null,
+                null
+        );
+    }
 }

@@ -27,6 +27,17 @@ public class TokenService {
         }
 
         TokenResponse response = authClient.requestToken();
+        System.out.println(
+                "[JWT TEST] Token received: " +
+                        (response != null && response.accessToken() != null
+                                && !response.accessToken().isBlank())
+        );
+
+        if (response != null) {
+            System.out.println("[JWT TEST] Token type: " + response.tokenType());
+            System.out.println("[JWT TEST] Expires in: " + response.expiresIn());
+            System.out.println("[JWT TEST] Scopes: " + response.scope());
+        }
 
         if (response == null
                 || response.accessToken() == null

@@ -16,12 +16,14 @@ public class MissionHeartbeatScheduler {
 
     private final MissionClient missionClient;
     private final ScheduledExecutorService heartbeatExecutor;
+    private final RecoveryLeaseRegistry leaseRegistry;
 
     private final ConcurrentMap<UUID, ScheduledFuture<?>> activeHeartbeats =
             new ConcurrentHashMap<>();
 
     @Value("${simulator.heartbeat.interval-ms:10000}")
     private long heartbeatIntervalMs;
+
 
     public void start(UUID missionId, UUID executionId) {
 
@@ -37,6 +39,9 @@ public class MissionHeartbeatScheduler {
             );
         }
 
+        // Nếu execution đang Recovery, lease phải hợp lệ.
+        leaseRegistry.getForWrite(executionId);
+
         activeHeartbeats.computeIfAbsent(executionId, id -> {
 
             log.info(
@@ -48,17 +53,56 @@ public class MissionHeartbeatScheduler {
             return heartbeatExecutor.scheduleWithFixedDelay(
                     () -> {
                         try {
+                            // Kiểm tra lease trước mỗi Heartbeat.
+                            leaseRegistry.getForWrite(executionId);
+
                             missionClient.sendHeartbeat(
                                     missionId,
                                     executionId
                             );
 
                             log.debug(
-                                    "Heartbeat sent: executionId={}",
+                                    "Heartbeat confirmed: missionId={}, executionId={}",
+                                    missionId,
                                     executionId
                             );
 
+                        }
+                        catch (org.springframework.web.client.RestClientResponseException e) {
+
+                            int status = e.getStatusCode().value();
+
+                            if (status == 409 || status == 403) {
+                                log.error(
+                                        "Heartbeat rejected: executionId={}, HTTP status={}",
+                                        executionId,
+                                        status
+                                );
+
+                                leaseRegistry.markLost(executionId);
+                                stop(executionId);
+
+                            } else {
+                                log.error(
+                                        "Heartbeat HTTP error: executionId={}, status={}",
+                                        executionId,
+                                        status,
+                                        e
+                                );
+                            }
+                        }
+                        catch (IllegalStateException e) {
+
+                            log.error(
+                                    "Heartbeat stopped due to invalid local state: executionId={}",
+                                    executionId,
+                                    e
+                            );
+
+                            stop(executionId);
+
                         } catch (Exception e) {
+
                             log.error(
                                     "Heartbeat failed: executionId={}",
                                     executionId,
@@ -72,6 +116,7 @@ public class MissionHeartbeatScheduler {
             );
         });
     }
+
 
     public void stop(UUID executionId) {
 

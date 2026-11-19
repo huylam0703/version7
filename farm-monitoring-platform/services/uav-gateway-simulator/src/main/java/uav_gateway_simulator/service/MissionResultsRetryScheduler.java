@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
 
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -17,6 +18,7 @@ public class MissionResultsRetryScheduler {
     private final MissionExecutionTracker executionTracker;
     private final MissionResultSimulationService resultSimulationService;
     private final MissionResultPayloadStore payloadStore;
+    private final MissionRecoveryLeaseManager recoveryLeaseManager;
     private final ScheduledExecutorService scheduler;
 
     private final ConcurrentMap<UUID, RetryState> retryStates =
@@ -35,12 +37,14 @@ public class MissionResultsRetryScheduler {
             MissionExecutionTracker executionTracker,
             MissionResultSimulationService resultSimulationService,
             MissionResultPayloadStore payloadStore,
+            MissionRecoveryLeaseManager recoveryLeaseManager,
             @Qualifier("missionResultsRetryExecutor")
             ScheduledExecutorService scheduler
     ) {
         this.executionTracker = executionTracker;
         this.resultSimulationService = resultSimulationService;
         this.payloadStore = payloadStore;
+        this.recoveryLeaseManager = recoveryLeaseManager;
         this.scheduler = scheduler;
     }
 
@@ -55,6 +59,7 @@ public class MissionResultsRetryScheduler {
     }
 
     public void schedule(UUID executionId) {
+
         if (!retryEnabled || executionId == null) {
             return;
         }
@@ -69,6 +74,12 @@ public class MissionResultsRetryScheduler {
                     "Cannot schedule retry: payload missing, executionId={}",
                     executionId
             );
+            return;
+        }
+
+        // Do not schedule a retry with an invalid recovery lease.
+        if (!isOwnershipValid(executionId)) {
+            stopDueToOwnershipLoss(executionId);
             return;
         }
 
@@ -116,6 +127,7 @@ public class MissionResultsRetryScheduler {
             UUID executionId,
             RetryState state
     ) {
+
         synchronized (state) {
             state.scheduled = false;
 
@@ -123,8 +135,7 @@ public class MissionResultsRetryScheduler {
                 return;
             }
 
-            if (!executionTracker.tryStartResultsRetry(
-                    executionId)) {
+            if (!executionTracker.tryStartResultsRetry(executionId)) {
                 return;
             }
 
@@ -133,8 +144,17 @@ public class MissionResultsRetryScheduler {
 
         int attempt = state.attempts.incrementAndGet();
         boolean succeeded = false;
+        boolean ownershipLost = false;
 
         try {
+
+            // Recheck ownership immediately before sending.
+            if (!isOwnershipValid(executionId)) {
+                throw new RecoveryOwnershipLostException(
+                        "Recovery ownership is invalid: " + executionId
+                );
+            }
+
             resultSimulationService.retryResults(executionId);
 
             if (!executionTracker.complete(executionId)) {
@@ -145,6 +165,10 @@ public class MissionResultsRetryScheduler {
             }
 
             payloadStore.remove(executionId);
+
+            // Release local lease only after completion.
+            recoveryLeaseManager.remove(executionId);
+
             succeeded = true;
 
             log.info(
@@ -153,13 +177,42 @@ public class MissionResultsRetryScheduler {
                     attempt
             );
 
+        } catch (RecoveryOwnershipLostException e) {
+
+            ownershipLost = true;
+
+            log.error(
+                    "Mission Results retry stopped: ownership lost, executionId={}",
+                    executionId,
+                    e
+            );
+
+        } catch (IllegalStateException e) {
+
+            if (!isOwnershipValid(executionId)) {
+
+                ownershipLost = true;
+
+                log.error(
+                        "Mission Results retry stopped: invalid lease, executionId={}",
+                        executionId,
+                        e
+                );
+
+            } else {
+                markRetryPending(executionId);
+
+                log.error(
+                        "Mission Results retry failed: executionId={}, attempt={}",
+                        executionId,
+                        attempt,
+                        e
+                );
+            }
+
         } catch (Exception e) {
 
-            if (executionTracker.getStatus(executionId)
-                    == MissionExecutionTracker.Status.RESULTS_PENDING) {
-
-                executionTracker.markResultsRetry(executionId);
-            }
+            markRetryPending(executionId);
 
             log.error(
                     "Mission Results retry failed: executionId={}, attempt={}",
@@ -169,14 +222,20 @@ public class MissionResultsRetryScheduler {
             );
 
         } finally {
+
             synchronized (state) {
                 state.running = false;
 
-                if (!succeeded
-                        && attempt >= maxAttempts) {
+                if (ownershipLost
+                        || (!succeeded && attempt >= maxAttempts)) {
                     state.exhausted = true;
                 }
             }
+        }
+
+        if (ownershipLost) {
+            stopDueToOwnershipLoss(executionId);
+            return;
         }
 
         if (succeeded) {
@@ -194,4 +253,37 @@ public class MissionResultsRetryScheduler {
             );
         }
     }
+
+    private boolean isOwnershipValid(UUID executionId) {
+
+        try {
+            // Null is allowed for normal, non-recovered missions.
+            recoveryLeaseManager.getValidLeaseOrNull(executionId);
+            return true;
+
+        } catch (IllegalStateException e) {
+            return false;
+        }
+    }
+
+    private void markRetryPending(UUID executionId) {
+
+        if (executionTracker.getStatus(executionId)
+                == MissionExecutionTracker.Status.RESULTS_PENDING) {
+
+            executionTracker.markResultsRetry(executionId);
+        }
+    }
+
+    private void stopDueToOwnershipLoss(UUID executionId) {
+
+        recoveryLeaseManager.markLost(executionId);
+        executionTracker.failDueToOwnershipLoss(executionId);
+
+        log.error(
+                "Mission Results retry disabled due to ownership loss: executionId={}",
+                executionId
+        );
+    }
+
 }

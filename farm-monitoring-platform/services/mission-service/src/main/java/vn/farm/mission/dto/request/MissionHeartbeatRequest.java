@@ -16,4 +16,6 @@ public class MissionHeartbeatRequest {
 
     @NotNull
     UUID executionId;
+    private UUID instanceId;
+    private Long recoveryGeneration;
 }
