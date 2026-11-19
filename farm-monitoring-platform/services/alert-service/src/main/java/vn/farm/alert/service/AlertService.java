@@ -47,8 +47,27 @@ public class AlertService {
                 request.getMessage()
         );
 
+        // Task 8: Kiểm tra Alert trùng theo readingId
+        if (request.getReadingId() != null
+                && alertRepository.existsByReadingId(request.getReadingId())) {
+
+            log.info(
+                    "Skipping duplicate sensor alert: readingId={}",
+                    request.getReadingId()
+            );
+
+            throw BusinessException.invalid(
+                    "DUPLICATE_SENSOR_ALERT",
+                    "Bản ghi cảm biến này đã tạo cảnh báo"
+            );
+        }
+
         Alert alert = alertMapper.toAlert(request);
         alert.setStatus(AlertStatus.NEW);
+
+// Task 8: Lưu ID bản ghi cảm biến tạo ra Alert
+// Alert thủ công vẫn có readingId = null
+        alert.setReadingId(request.getReadingId());
 
         Alert savedAlert = alertRepository.save(alert);
 

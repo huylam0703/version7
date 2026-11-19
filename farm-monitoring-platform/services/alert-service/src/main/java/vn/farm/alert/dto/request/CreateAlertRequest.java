@@ -1,3 +1,4 @@
+
 package vn.farm.alert.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
@@ -24,4 +25,8 @@ public class CreateAlertRequest {
     @NotBlank(message = "Nội dung cảnh báo không được để trống")
     @Size(max = 500)
     private String message;
+
+    // Task 8: ID bản ghi cảm biến tạo ra Alert
+    // Để null khi tạo Alert thủ công
+    private UUID readingId;
 }

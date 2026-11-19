@@ -2,8 +2,9 @@ package vn.farm.alert.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import java.util.UUID;
 import org.hibernate.annotations.Nationalized;
+
+import java.util.UUID;
 
 @Entity
 @Table(name = "dbo_AL_Alerts")
@@ -36,4 +37,8 @@ public class Alert {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private AlertStatus status = AlertStatus.NEW;
+
+    // Task 8: ID bản ghi cảm biến đã tạo ra Alert
+    @Column(name = "readingId")
+    private UUID readingId;
 }

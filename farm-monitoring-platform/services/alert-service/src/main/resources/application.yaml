@@ -42,3 +42,19 @@ management:
 farm:
   security:
     enabled: false
+
+  alert:
+    sensor:
+      thresholds:
+        AIR_TEMP:
+          min: 10.0
+          max: 35.0
+        AIR_HUMIDITY:
+          min: 30.0
+          max: 85.0
+        SOIL_MOISTURE:
+          min: 20.0
+          max: 80.0
+
+      type-mappings:
+        "f1d7a0a9-11b3-4f56-a63b-31ad99a19f22": AIR_TEMP
