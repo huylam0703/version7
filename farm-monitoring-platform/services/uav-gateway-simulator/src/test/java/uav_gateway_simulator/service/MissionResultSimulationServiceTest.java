@@ -5,8 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.MissionResultRequest;
-import uav_gateway_simulator.dto.MissionResultResponse;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
+import uav_gateway_simulator.dto.response.MissionResultResponse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,11 +35,14 @@ class MissionResultSimulationServiceTest {
 
         RecoveryLeaseRegistry leaseRegistry =
                 new RecoveryLeaseRegistry();
+        MissionCancellationService cancellationService =
+                mock(MissionCancellationService.class);
 
         service = new MissionResultSimulationService(
                 missionClient,
                 payloadStore,
-                leaseRegistry
+                leaseRegistry,
+                cancellationService
         );
 
         missionId = UUID.randomUUID();

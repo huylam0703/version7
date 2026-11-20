@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientResponseException;
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.MissionRecoveryClaimResponse;
+import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
 
 import java.time.Instant;

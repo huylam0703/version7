@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.dto.response.MissionProgressResponse;
+import uav_gateway_simulator.dto.response.WaypointResponse;
+import uav_gateway_simulator.dto.request.MissionProgressRequest;
+import uav_gateway_simulator.exception.MissionCancelledException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -23,16 +26,22 @@ class WaypointSimulationServiceTest {
 
     private UUID missionId;
     private UUID executionId;
+    private MissionCancellationService cancellationService;
+
 
     @BeforeEach
     void setUp() {
         missionClient = mock(MissionClient.class);
+
         RecoveryLeaseRegistry leaseRegistry =
                 new RecoveryLeaseRegistry();
 
+        cancellationService = mock(MissionCancellationService.class);
+
         simulationService = new WaypointSimulationService(
                 missionClient,
-                leaseRegistry
+                leaseRegistry,
+                cancellationService
         );
 
         ReflectionTestUtils.setField(
@@ -44,6 +53,7 @@ class WaypointSimulationServiceTest {
         missionId = UUID.randomUUID();
         executionId = UUID.randomUUID();
     }
+
 
     private WaypointResponse waypoint(int seq) {
         return new WaypointResponse(
@@ -170,5 +180,56 @@ class WaypointSimulationServiceTest {
                         eq(missionId),
                         any(MissionProgressRequest.class)
                 );
+    }
+    @Test
+    void shouldStopWaypointsWhenMissionIsCancelled() {
+        List<WaypointResponse> waypoints = List.of(
+                waypoint(1),
+                waypoint(2),
+                waypoint(3)
+        );
+
+        // Mission bị hủy tại lần kiểm tra thứ 3,
+        // tức là trước khi bắt đầu waypoint thứ 2.
+        doNothing()
+                .doNothing()
+                .doThrow(new MissionCancelledException("Mission cancelled"))
+                .when(cancellationService)
+                .checkNotCancelled(missionId);
+
+        when(missionClient.updateProgress(
+                eq(missionId),
+                any(MissionProgressRequest.class)
+        )).thenAnswer(invocation -> {
+            MissionProgressRequest request = invocation.getArgument(1);
+
+            return new MissionProgressResponse(
+                    missionId,
+                    executionId,
+                    "EXECUTING",
+                    request.sequence(),
+                    request.waypointSeq(),
+                    Instant.now()
+            );
+        });
+
+        assertThrows(
+                MissionCancelledException.class,
+                () -> simulationService.simulate(
+                        missionId,
+                        executionId,
+                        waypoints
+                )
+        );
+
+        // Chỉ waypoint đầu tiên được gửi Progress.
+        verify(missionClient, times(1))
+                .updateProgress(
+                        eq(missionId),
+                        any(MissionProgressRequest.class)
+                );
+
+        verify(cancellationService, times(3))
+                .checkNotCancelled(missionId);
     }
 }

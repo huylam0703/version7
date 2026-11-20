@@ -1,4 +1,4 @@
-package uav_gateway_simulator.dto;
+package uav_gateway_simulator.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

@@ -5,7 +5,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.dto.response.MissionResultResponse;
+import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
 
 import java.time.Instant;
 import java.util.List;
@@ -19,6 +21,7 @@ public class MissionResultSimulationService {
     private final MissionClient missionClient;
     private final MissionResultPayloadStore payloadStore;
     private final RecoveryLeaseRegistry leaseRegistry;
+    private final MissionCancellationService cancellationService;
 
     public MissionResultResponse simulateResults(
             UUID missionId,
@@ -97,6 +100,8 @@ public class MissionResultSimulationService {
         // Kiểm tra lease trước mỗi lần gửi Results.
         // MissionClient sẽ gắn ownership vào HTTP request.
         leaseRegistry.getForWrite(executionId);
+
+        cancellationService.checkNotCancelled(missionId);
 
         log.info(
                 "Sending Mission Results: missionId={}, executionId={}",

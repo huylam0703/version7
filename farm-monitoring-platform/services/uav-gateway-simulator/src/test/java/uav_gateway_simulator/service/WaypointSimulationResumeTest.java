@@ -6,11 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.MissionProgressRequest;
-import uav_gateway_simulator.dto.MissionProgressResponse;
-import uav_gateway_simulator.dto.MissionRecoveryClaimResponse;
+import uav_gateway_simulator.dto.request.MissionProgressRequest;
+import uav_gateway_simulator.dto.response.MissionProgressResponse;
+import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 import uav_gateway_simulator.dto.MissionResumePlan;
-import uav_gateway_simulator.dto.WaypointResponse;
+import uav_gateway_simulator.dto.response.WaypointResponse;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -39,9 +39,13 @@ class WaypointSimulationResumeTest {
         missionClient = mock(MissionClient.class);
         leaseRegistry = new RecoveryLeaseRegistry();
 
-        service = new WaypointSimulationService(
+        MissionCancellationService cancellationService =
+                mock(MissionCancellationService.class);
+
+        this.service = new WaypointSimulationService(
                 missionClient,
-                leaseRegistry
+                leaseRegistry,
+                cancellationService
         );
 
         ReflectionTestUtils.setField(

@@ -9,12 +9,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.MissionReadyPayload;
-import uav_gateway_simulator.dto.RecoverableMissionResponse;
+import uav_gateway_simulator.dto.response.RecoverableMissionResponse;
 
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 

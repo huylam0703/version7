@@ -6,6 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.dto.response.MissionAckResponse;
+import uav_gateway_simulator.dto.response.MissionDetailResponse;
+import uav_gateway_simulator.dto.response.MissionResultResponse;
+import uav_gateway_simulator.dto.response.WaypointResponse;
+import uav_gateway_simulator.exception.MissionCancelledException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -48,6 +53,8 @@ class MissionExecutionServiceTest {
         executionTracker = new MissionExecutionTracker();
         missionResumePlanner = mock(MissionResumePlanner.class);
         leaseManager = mock(MissionRecoveryLeaseManager.class);
+        MissionCancellationService cancellationService =
+                mock(MissionCancellationService.class);
 
         missionExecutionService = new MissionExecutionService(
                 missionClient,
@@ -56,7 +63,8 @@ class MissionExecutionServiceTest {
                 missionResultSimulationService,
                 executionTracker,
                 missionResumePlanner,
-                leaseManager
+                leaseManager,
+                cancellationService
         );
 
         missionId = UUID.randomUUID();
@@ -418,5 +426,34 @@ class MissionExecutionServiceTest {
         verify(heartbeatScheduler, times(1))
                 .stop(executionId);
     }
+    @Test
+    void shouldStopHeartbeatAndSkipResultsWhenMissionCancelled() {
+        stubSuccessfulAck();
 
+        doThrow(new MissionCancelledException("Mission cancelled"))
+                .when(waypointSimulationService)
+                .simulate(
+                        missionId,
+                        executionId,
+                        mission.waypoints()
+                );
+
+        assertThrows(
+                MissionCancelledException.class,
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        verify(heartbeatScheduler)
+                .start(missionId, executionId);
+
+        verify(heartbeatScheduler)
+                .stop(executionId);
+
+        verifyNoInteractions(missionResultSimulationService);
+
+        assertEquals(
+                MissionExecutionTracker.Status.PROCESSING,
+                executionTracker.getStatus(executionId)
+        );
+    }
 }

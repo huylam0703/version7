@@ -10,9 +10,9 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.MissionNodeResultRequest;
-import uav_gateway_simulator.dto.MissionResultRequest;
-import uav_gateway_simulator.dto.MissionResultResponse;
+import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
+import uav_gateway_simulator.dto.response.MissionResultResponse;
 
 import java.time.Instant;
 import java.util.List;

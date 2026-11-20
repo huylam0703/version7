@@ -17,6 +17,7 @@ public class MissionHeartbeatScheduler {
     private final MissionClient missionClient;
     private final ScheduledExecutorService heartbeatExecutor;
     private final RecoveryLeaseRegistry leaseRegistry;
+    private final MissionCancellationService cancellationService;
 
     private final ConcurrentMap<UUID, ScheduledFuture<?>> activeHeartbeats =
             new ConcurrentHashMap<>();
@@ -72,7 +73,8 @@ public class MissionHeartbeatScheduler {
 
                             int status = e.getStatusCode().value();
 
-                            if (status == 409 || status == 403) {
+                            if (status == 403 || status == 409) {
+
                                 log.error(
                                         "Heartbeat rejected: executionId={}, HTTP status={}",
                                         executionId,
@@ -82,7 +84,41 @@ public class MissionHeartbeatScheduler {
                                 leaseRegistry.markLost(executionId);
                                 stop(executionId);
 
+                            } else if (status == 400) {
+
+                                try {
+                                    if (cancellationService.isCancelled(missionId)) {
+
+                                        log.info(
+                                                "Heartbeat stopped because mission was cancelled: missionId={}, executionId={}",
+                                                missionId,
+                                                executionId
+                                        );
+
+                                        stop(executionId);
+
+                                    } else {
+
+                                        log.error(
+                                                "Heartbeat HTTP 400 but mission is not cancelled: missionId={}, executionId={}",
+                                                missionId,
+                                                executionId,
+                                                e
+                                        );
+                                    }
+
+                                } catch (Exception checkException) {
+
+                                    log.error(
+                                            "Cannot verify mission cancellation after heartbeat HTTP 400: missionId={}, executionId={}",
+                                            missionId,
+                                            executionId,
+                                            checkException
+                                    );
+                                }
+
                             } else {
+
                                 log.error(
                                         "Heartbeat HTTP error: executionId={}, status={}",
                                         executionId,

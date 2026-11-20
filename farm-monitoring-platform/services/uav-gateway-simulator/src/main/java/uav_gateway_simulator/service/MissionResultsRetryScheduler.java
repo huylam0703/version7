@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
+import uav_gateway_simulator.exception.MissionCancelledException;
 
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -20,6 +21,7 @@ public class MissionResultsRetryScheduler {
     private final MissionResultPayloadStore payloadStore;
     private final MissionRecoveryLeaseManager recoveryLeaseManager;
     private final ScheduledExecutorService scheduler;
+    private final MissionCancellationService cancellationService;
 
     private final ConcurrentMap<UUID, RetryState> retryStates =
             new ConcurrentHashMap<>();
@@ -38,6 +40,7 @@ public class MissionResultsRetryScheduler {
             MissionResultSimulationService resultSimulationService,
             MissionResultPayloadStore payloadStore,
             MissionRecoveryLeaseManager recoveryLeaseManager,
+            MissionCancellationService cancellationService,
             @Qualifier("missionResultsRetryExecutor")
             ScheduledExecutorService scheduler
     ) {
@@ -45,6 +48,7 @@ public class MissionResultsRetryScheduler {
         this.resultSimulationService = resultSimulationService;
         this.payloadStore = payloadStore;
         this.recoveryLeaseManager = recoveryLeaseManager;
+        this.cancellationService = cancellationService;
         this.scheduler = scheduler;
     }
 
@@ -127,6 +131,7 @@ public class MissionResultsRetryScheduler {
             UUID executionId,
             RetryState state
     ) {
+        boolean cancelled = false;
 
         synchronized (state) {
             state.scheduled = false;
@@ -155,6 +160,17 @@ public class MissionResultsRetryScheduler {
                 );
             }
 
+            MissionResultPayloadStore.PendingResult pending =
+                    payloadStore.get(executionId);
+
+            if (pending == null) {
+                throw new IllegalStateException(
+                        "Mission Results payload missing: " + executionId
+                );
+            }
+
+            cancellationService.checkNotCancelled(pending.missionId());
+
             resultSimulationService.retryResults(executionId);
 
             if (!executionTracker.complete(executionId)) {
@@ -177,7 +193,21 @@ public class MissionResultsRetryScheduler {
                     attempt
             );
 
-        } catch (RecoveryOwnershipLostException e) {
+        }
+        catch (MissionCancelledException e) {
+
+            cancelled = true;
+            executionTracker.cancel(executionId);
+            payloadStore.remove(executionId);
+            recoveryLeaseManager.remove(executionId);
+
+            log.info(
+                    "Mission Results retry cancelled: executionId={}",
+                    executionId
+            );
+
+        }
+        catch (RecoveryOwnershipLostException e) {
 
             ownershipLost = true;
 
@@ -226,11 +256,16 @@ public class MissionResultsRetryScheduler {
             synchronized (state) {
                 state.running = false;
 
-                if (ownershipLost
+                if (cancelled
+                        || ownershipLost
                         || (!succeeded && attempt >= maxAttempts)) {
                     state.exhausted = true;
                 }
             }
+        }
+        if (cancelled) {
+            retryStates.remove(executionId, state);
+            return;
         }
 
         if (ownershipLost) {

@@ -3,7 +3,7 @@ package uav_gateway_simulator.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.AuthClient;
-import uav_gateway_simulator.dto.TokenResponse;
+import uav_gateway_simulator.dto.response.TokenResponse;
 
 import java.time.Instant;
 

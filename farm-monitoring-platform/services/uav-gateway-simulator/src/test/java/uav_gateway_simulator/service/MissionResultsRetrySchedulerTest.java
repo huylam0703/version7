@@ -5,9 +5,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
-import uav_gateway_simulator.dto.MissionResultRequest;
-import uav_gateway_simulator.dto.MissionNodeResultRequest;
-import uav_gateway_simulator.dto.MissionResultResponse;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
+import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
+import uav_gateway_simulator.dto.response.MissionResultResponse;
+import uav_gateway_simulator.exception.MissionCancelledException;
 
 import java.time.Instant;
 import java.util.List;
@@ -25,6 +26,8 @@ class MissionResultsRetrySchedulerTest {
     private MissionResultPayloadStore payloadStore;
     private ScheduledExecutorService executor;
     private MissionResultsRetryScheduler retryScheduler;
+    private MissionCancellationService cancellationService;
+    private MissionRecoveryLeaseManager leaseManager;
 
     private UUID missionId;
     private UUID executionId;
@@ -37,14 +40,15 @@ class MissionResultsRetrySchedulerTest {
 
         executor = Executors.newSingleThreadScheduledExecutor();
 
-        MissionRecoveryLeaseManager leaseManager =
-                mock(MissionRecoveryLeaseManager.class);
+        cancellationService = mock(MissionCancellationService.class);
+        leaseManager = mock(MissionRecoveryLeaseManager.class);
 
         retryScheduler = new MissionResultsRetryScheduler(
                 tracker,
                 resultService,
                 payloadStore,
                 leaseManager,
+                cancellationService,
                 executor
         );
         ReflectionTestUtils.setField(
@@ -266,5 +270,60 @@ class MissionResultsRetrySchedulerTest {
                 MissionExecutionTracker.Status.RESULTS_RETRY,
                 tracker.getStatus(executionId)
         );
+    }
+
+    @Test
+    void shouldCancelResultsRetryBeforeSendingResults() throws Exception {
+
+        doThrow(new MissionCancelledException("Mission cancelled"))
+                .when(cancellationService)
+                .checkNotCancelled(missionId);
+
+        retryScheduler.schedule(executionId);
+
+        // Wait for scheduled task to finish
+        executor.schedule(() -> {}, 100, TimeUnit.MILLISECONDS)
+                .get(5, TimeUnit.SECONDS);
+
+        assertEquals(
+                MissionExecutionTracker.Status.CANCELLED,
+                tracker.getStatus(executionId)
+        );
+
+        assertNull(payloadStore.get(executionId));
+
+        verifyNoInteractions(resultService);
+
+        verify(leaseManager).remove(executionId);
+
+        verify(cancellationService, atLeastOnce())
+                .checkNotCancelled(missionId);
+    }
+    @Test
+    void shouldCancelResultsRetryWhenResultServiceDetectsCancellation()
+            throws Exception {
+
+        when(resultService.retryResults(executionId))
+                .thenThrow(
+                        new MissionCancelledException("Mission cancelled")
+                );
+
+        retryScheduler.schedule(executionId);
+
+        executor.schedule(() -> {}, 100, TimeUnit.MILLISECONDS)
+                .get(5, TimeUnit.SECONDS);
+
+        assertEquals(
+                MissionExecutionTracker.Status.CANCELLED,
+                tracker.getStatus(executionId)
+        );
+
+        assertNull(payloadStore.get(executionId));
+
+        verify(resultService, times(1))
+                .retryResults(executionId);
+
+        verify(leaseManager)
+                .remove(executionId);
     }
 }

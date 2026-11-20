@@ -4,8 +4,8 @@ package uav_gateway_simulator.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.MissionExecutionProgressResponse;
-import uav_gateway_simulator.dto.MissionProgressDetailResponse;
+import uav_gateway_simulator.dto.response.MissionExecutionProgressResponse;
+import uav_gateway_simulator.dto.response.MissionProgressDetailResponse;
 import uav_gateway_simulator.dto.MissionResumePlan;
 
 import java.util.Comparator;

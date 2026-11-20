@@ -5,10 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.MissionProgressRequest;
-import uav_gateway_simulator.dto.MissionProgressResponse;
+import uav_gateway_simulator.dto.request.MissionProgressRequest;
+import uav_gateway_simulator.dto.response.MissionProgressResponse;
 import uav_gateway_simulator.dto.MissionResumePlan;
-import uav_gateway_simulator.dto.WaypointResponse;
+import uav_gateway_simulator.dto.response.WaypointResponse;
 import jakarta.annotation.PostConstruct;
 
 import java.time.Instant;
@@ -23,6 +23,7 @@ public class WaypointSimulationService {
 
     private final MissionClient missionClient;
     private final RecoveryLeaseRegistry leaseRegistry;
+    private final MissionCancellationService cancellationService;
 
     @Value("${simulator.flight.waypoint-delay-ms:3000}")
     private long waypointDelayMs;
@@ -53,16 +54,20 @@ public class WaypointSimulationService {
 
         for (WaypointResponse waypoint : sortedWaypoints) {
 
+            cancellationService.checkNotCancelled(missionId);
+
             try {
                 Thread.sleep(waypointDelayMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException(
-                        "Waypoint simulation interrupted",
-                        e
+                        "Waypoint simulation interrupted", e
                 );
             }
-            // Kiểm tra trạng thái Recovery trước khi gửi Progress.
+
+            cancellationService.checkNotCancelled(missionId);
+
+            // Kiểm tra Recovery Lease trước khi gửi Progress
             leaseRegistry.getForWrite(executionId);
 
             log.info(
@@ -203,6 +208,8 @@ public class WaypointSimulationService {
         for (int i = startIndex; i < sortedWaypoints.size(); i++) {
             WaypointResponse waypoint = sortedWaypoints.get(i);
 
+            cancellationService.checkNotCancelled(missionId);
+
             if (waypoint.seq() < 0
                     || waypoint.seq() > Short.MAX_VALUE) {
                 throw new IllegalArgumentException(
@@ -218,6 +225,7 @@ public class WaypointSimulationService {
                         "Waypoint resume interrupted", e
                 );
             }
+            cancellationService.checkNotCancelled(missionId);
             // Recovery phải còn quyền sở hữu execution.
             leaseRegistry.getForWrite(executionId);
 
