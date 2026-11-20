@@ -98,7 +98,9 @@ public class WaypointSimulationService {
             if (response == null
                     || !missionId.equals(response.missionId())
                     || !executionId.equals(response.executionId())
-                    || response.lastConfirmedSequence() != progressSequence) {
+                    || response.lastConfirmedSequence() != progressSequence
+                    || response.waypointSeq() == null
+                    || response.waypointSeq().intValue() != waypoint.seq()) {
 
                 throw new IllegalStateException(
                         "Invalid progress confirmation"

@@ -199,18 +199,17 @@ public class MissionExecutionService {
                     executionId
             );
 
+
             // 12. Mark Results Pending
-            // Waypoints are completed.
-            // Do not restart the entire mission if Results fail.
+            // Normal mission execution does not require a recovery lease.
             executionTracker.markResultsPending(executionId);
-            // Waypoints completed. Recovery ownership must still be valid.
-            leaseManager.requireValidLease(executionId);
 
             log.info(
                     "Mission Results pending: missionId={}, executionId={}",
                     missionId,
                     executionId
             );
+
 
             // 13. Send Mission Results
             try {

@@ -170,9 +170,11 @@ class MissionProcessingServiceTest {
         );
     }
 
+
     @Test
-    void shouldAllowRetryAfterFailure() throws Exception {
+    void shouldRequireRecoveryAfterFailure() throws Exception {
         MissionReadyPayload payload = createPayload();
+        UUID executionId = payload.getExecutionId();
 
         CountDownLatch failed = new CountDownLatch(1);
 
@@ -192,16 +194,45 @@ class MissionProcessingServiceTest {
                 failed.await(5, TimeUnit.SECONDS)
         );
 
-        // Wait for worker to handle the exception
+        // Wait for worker to finish exception handling.
         executor.submit(() -> {})
                 .get(5, TimeUnit.SECONDS);
 
-        assertTrue(
-                tracker.tryStart(payload.getExecutionId())
+        // Execution must be marked FAILED.
+        assertEquals(
+                MissionExecutionTracker.Status.FAILED,
+                tracker.getStatus(executionId)
         );
 
-        tracker.fail(payload.getExecutionId());
+        // Normal submit must not restart failed execution.
+        assertFalse(
+                tracker.tryStart(executionId)
+        );
+
+        // Recovery is allowed to claim a FAILED execution.
+        assertTrue(
+                tracker.tryStartRecovery(executionId)
+        );
+
+        assertEquals(
+                MissionExecutionTracker.Status.PROCESSING,
+                tracker.getStatus(executionId)
+        );
+
+        // Restore previous status when recovery is rolled back.
+        assertTrue(
+                tracker.rollbackRecovery(executionId)
+        );
+
+        assertEquals(
+                MissionExecutionTracker.Status.FAILED,
+                tracker.getStatus(executionId)
+        );
+
+        verify(executionService, times(1))
+                .prepareMission(payload);
     }
+
 
     @Test
     void shouldNotScheduleRetryWhenPayloadMissing()
