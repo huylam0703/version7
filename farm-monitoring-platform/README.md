@@ -30,7 +30,7 @@ Sau đó kiểm tra: `docker compose logs db-init` phải báo tạo đủ 6 dat
 |---|---|---|---|
 | api-gateway | .NET | 8080 | |
 | user-auth | .NET | 8081 | |
-| farm-device | .NET | 8082 | |
+| farm-device | Java | 8082 | |
 | mission | Java | 8083 | |
 | sensor-data | Java | 8084 | |
 | alert | Java | 8085 | |
