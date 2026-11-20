@@ -47,8 +47,14 @@ public class RegisterSimulatorClientValidator : AbstractValidator<RegisterSimula
             .Matches("^[a-zA-Z0-9._-]+$").WithMessage("client_id chỉ gồm chữ, số, dấu chấm, gạch ngang, gạch dưới.");
         RuleFor(x => x.DisplayName).MaximumLength(150);
         RuleFor(x => x.Scopes).NotEmpty().WithMessage("Phải có ít nhất một scope.");
-        RuleForEach(x => x.Scopes).Must(SimulatorScopes.IsKnown)
-            .WithMessage("Scope không hợp lệ (chỉ mission:read, mission:ack, mission:progress).");
+
+        RuleForEach(x => x.Scopes)
+            .Must(SimulatorScopes.IsKnown)
+            .WithMessage(
+                "Scope không hợp lệ (chỉ mission:read, mission:ack, " +
+                "mission:progress, mission:heartbeat, mission:results)."
+            );
+
     }
 }
 

@@ -7,44 +7,38 @@ namespace UserAuthService.Domain.Entity;
 /// <summary>
 /// 
 /// </summary>
+
 public static class SimulatorScopes
 {
-    /// <summary>
-    /// 
-    /// </summary>
     public const string MissionRead = "mission:read";
-    /// <summary>
-    /// 
-    /// </summary>
     public const string MissionAck = "mission:ack";
-    /// <summary>
-    /// 
-    /// </summary>
     public const string MissionProgress = "mission:progress";
-   
-    /// <summary>
-    /// 
-    /// </summary>
-    public static readonly IReadOnlyList<string> All = [MissionRead, MissionAck, MissionProgress];
+    public const string MissionHeartbeat = "mission:heartbeat";
+    public const string MissionResults = "mission:results";
 
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="scope"></param>
-    /// <returns></returns>
-    public static bool IsKnown(string scope) => All.Contains(scope, StringComparer.Ordinal);
+    public static readonly IReadOnlyList<string> All =
+    [
+        MissionRead,
+        MissionAck,
+        MissionProgress,
+        MissionHeartbeat,
+        MissionResults
+    ];
 
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="scope"></param>
-    /// <returns></returns>
+    public static bool IsKnown(string scope)
+        => All.Contains(scope, StringComparer.Ordinal);
+
     public static List<string> Parse(string? scope)
         => (scope ?? "")
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries |
+                StringSplitOptions.TrimEntries
+            )
             .Distinct(StringComparer.Ordinal)
             .ToList();
 }
+
 
 /// <summary>
 /// Machine client (UAV Gateway Simulator). Không phải người dùng, không có role.

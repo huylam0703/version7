@@ -31,6 +31,8 @@ import java.time.ZoneOffset;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
+import vn.farm.mission.config.SimulatorProperties;
 
 @Service
 @Slf4j
@@ -46,6 +48,9 @@ public class MissionService {
     final MissionReferenceValidator references;
     final MissionExecutionRepository missionExecutionRepository;
     final MissionOutboxService missionOutboxService;
+    final SimulatorProperties simulatorProperties;
+    final MissionRecoveryOwnershipValidator ownershipValidator;
+    final MissionExecutionLockService executionLockService;
 
     @Transactional
     public MissionResponse createMission(CreateMissionRequest request) {
@@ -122,6 +127,37 @@ public class MissionService {
                 .build();
 
     }
+
+
+    @Transactional(readOnly = true)
+    public MissionDetailResponse getMissionById(
+            UUID missionId,
+            String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        MissionExecution execution = missionExecutionRepository
+                .findByMission_MissionId(missionId)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "EXECUTION_NOT_FOUND",
+                        "Mission chưa có Execution"
+                ));
+
+        if (!clientId.equals(execution.getAssignedClientId())) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_NOT_ASSIGNED",
+                    "Simulator không được phân công Mission này"
+            );
+        }
+
+        return getMissionById(missionId);
+    }
+
 
     @Transactional(readOnly = true)
     public MissionDetailResponse getMissionById(UUID missionId) {
@@ -244,6 +280,7 @@ public class MissionService {
         MissionExecution execution = MissionExecution.builder()
                 .mission(saved)
                 .status(MissionExecutionStatus.WAITING_ACK)
+                .assignedClientId(simulatorProperties.getClientId())
                 .startedAt(now)
                 .ackDeadline(now.plusSeconds(90))
                 .notificationAttempts(1)
@@ -343,11 +380,103 @@ public class MissionService {
             UUID missionId,
             MissionResultRequest request
     ) {
-        Mission mission = missionRepository.findById(missionId)
+        if (request.getExecutionId() == null) {
+            throw BusinessException.invalid(
+                    "EXECUTION_ID_REQUIRED",
+                    "ExecutionId không được để trống"
+            );
+        }
+
+        executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
+
+        return processMissionResults(missionId, request);
+    }
+    @Transactional
+    public MissionResponse receiveMissionResults(
+            UUID missionId,
+            MissionResultRequest request,
+            String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        if (request.getExecutionId() == null) {
+            throw BusinessException.invalid(
+                    "EXECUTION_ID_REQUIRED",
+                    "ExecutionId không được để trống"
+            );
+        }
+
+        // Khóa Mission trước, Execution sau
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
+
+        if (!clientId.equals(execution.getAssignedClientId())) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_NOT_ASSIGNED",
+                    "Simulator không được phân công Mission này"
+            );
+        }
+
+        ownershipValidator.validate(
+                execution,
+                request.getInstanceId(),
+                request.getRecoveryGeneration()
+        );
+
+        return processMissionResults(missionId, request);
+    }
+    private MissionResponse processMissionResults(
+            UUID missionId,
+            MissionResultRequest request
+    ) {
+        // Giữ nguyên logic xử lý Mission Results hiện tại,
+        // bắt đầu từ missionRepository.findForResults(...)
+
+        Mission mission = missionRepository.findForResults(missionId)
                 .orElseThrow(() -> BusinessException.notFound(
                         "MISSION_NOT_FOUND",
                         "Mission không tồn tại"
                 ));
+
+        if (mission.getStatus() == MissionStatus.COMPLETED
+                || mission.getStatus() == MissionStatus.PARTIAL
+                || mission.getStatus() == MissionStatus.FAILED) {
+
+            List<MissionNode> existingNodes =
+                    missionNodeRepository.findByMission_MissionId(missionId);
+
+            if (!isSameMissionResults(existingNodes, request)) {
+                throw BusinessException.invalid(
+                        "MISSION_RESULT_CONFLICT",
+                        "Kết quả gửi lại không khớp với kết quả đã lưu"
+                );
+            }
+
+            MissionResponse response = buildMissionResponse(mission);
+
+            MissionExecution existingExecution =
+                    missionExecutionRepository.findByMission_MissionId(missionId)
+                            .orElseThrow(() -> BusinessException.notFound(
+                                    "EXECUTION_NOT_FOUND",
+                                    "Không tìm thấy MissionExecution"
+                            ));
+
+            response.setExecutionId(existingExecution.getExecutionId());
+            response.setSuccessNodes(mission.getSuccessNodes());
+            response.setFailedNodes(mission.getFailedNodes());
+
+            return response;
+        }
 
         if (mission.getStatus() != MissionStatus.RUNNING) {
             throw BusinessException.invalid(
@@ -385,6 +514,21 @@ public class MissionService {
                         "NodeId bị trùng trong kết quả"
                 );
             }
+            if (item.getResult() == NodeResultStatus.SUCCESS
+                    && item.getRecordsCount() == 0) {
+                throw BusinessException.invalid(
+                        "INVALID_SUCCESS_RESULT",
+                        "Node SUCCESS phải có ít nhất một bản ghi"
+                );
+            }
+
+            if (item.getResult() == NodeResultStatus.FAILED
+                    && item.getRecordsCount() > 0) {
+                throw BusinessException.invalid(
+                        "INVALID_FAILED_RESULT",
+                        "Node FAILED không được có bản ghi thành công"
+                );
+            }
 
             MissionNode node = nodeMap.get(item.getNodeId());
 
@@ -394,6 +538,20 @@ public class MissionService {
                         "Node không thuộc Mission"
                 );
             }
+
+            String currentResult = node.getResult();
+            String incomingResult = item.getResult().name();
+
+            if (currentResult != null
+                    && !"PENDING".equals(currentResult)
+                    && !currentResult.equals(incomingResult)) {
+
+                throw BusinessException.invalid(
+                        "NODE_RESULT_CONFLICT",
+                        "Kết quả cuối cùng của Node không khớp với Progress"
+                );
+            }
+
 
             node.setResult(item.getResult().name());
             node.setRecordsCount(item.getRecordsCount());
@@ -464,15 +622,43 @@ public class MissionService {
             );
         }
 
-        mission.setEndedAt(Instant.now());
+
+        Instant finishedAt = Instant.now();
+        mission.setEndedAt(finishedAt);
+
+        MissionExecution execution = missionExecutionRepository
+                .findByMission_MissionId(missionId)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "EXECUTION_NOT_FOUND",
+                        "Không tìm thấy MissionExecution"
+                ));
+
+        if (execution.getStatus() != MissionExecutionStatus.EXECUTING) {
+            throw BusinessException.invalid(
+                    "INVALID_EXECUTION_STATUS",
+                    "Execution phải ở trạng thái EXECUTING"
+            );
+        }
+
+        MissionExecutionStatus executionStatus =
+                mission.getStatus() == MissionStatus.FAILED
+                        ? MissionExecutionStatus.FAILED
+                        : MissionExecutionStatus.COMPLETED;
+
+        execution.setStatus(executionStatus);
+        missionExecutionRepository.save(execution);
 
         Mission saved = missionRepository.save(mission);
 
         publishMissionStatusChanged(saved, oldStatus1);
 
+
         // Cần lưu MissionStatusLog khi trạng thái thay đổi.
 
         MissionResponse response = missionMapper.toMissionResponse(saved);
+        response.setExecutionId(execution.getExecutionId());
+        response.setSuccessNodes(successCount);
+        response.setFailedNodes(failedCount);
 
         List<Waypoint> waypoints =
                 waypointRepository.findByMission_MissionIdOrderBySeqAsc(
@@ -493,6 +679,252 @@ public class MissionService {
 
         return response;
     }
+
+//    @Transactional
+//    public MissionResponse receiveMissionResults(
+//            UUID missionId,
+//            MissionResultRequest request,
+//            String clientId
+//    ) {
+//        if (request.getExecutionId() == null) {
+//            throw BusinessException.invalid(
+//                    "EXECUTION_ID_REQUIRED",
+//                    "ExecutionId không được để trống"
+//            );
+//        }
+//
+//        MissionExecution execution =
+//                missionExecutionRepository.findForProgress(
+//                        request.getExecutionId(),
+//                        missionId
+//                ).orElseThrow(() -> BusinessException.notFound(
+//                        "EXECUTION_NOT_FOUND",
+//                        "Không tìm thấy Execution thuộc Mission"
+//                ));
+//
+//        if (clientId == null
+//                || execution.getAssignedClientId() == null
+//                || !clientId.equals(execution.getAssignedClientId())) {
+//            throw BusinessException.invalid(
+//                    "SIMULATOR_NOT_ASSIGNED",
+//                    "Simulator không được phân công Mission này"
+//            );
+//        }
+//
+//        Mission mission = missionRepository.findForResults(missionId)
+//                .orElseThrow(() -> BusinessException.notFound(
+//                        "MISSION_NOT_FOUND",
+//                        "Mission không tồn tại"
+//                ));
+//
+//        if (mission.getStatus() == MissionStatus.COMPLETED
+//                || mission.getStatus() == MissionStatus.PARTIAL
+//                || mission.getStatus() == MissionStatus.FAILED) {
+//
+//            List<MissionNode> existingNodes =
+//                    missionNodeRepository.findByMission_MissionId(missionId);
+//
+//            if (!isSameMissionResults(existingNodes, request)) {
+//                throw BusinessException.invalid(
+//                        "MISSION_RESULT_CONFLICT",
+//                        "Kết quả gửi lại không khớp với kết quả đã lưu"
+//                );
+//            }
+//
+//            return buildMissionResponse(mission);
+//        }
+//
+//        if (mission.getStatus() != MissionStatus.RUNNING) {
+//            throw BusinessException.invalid(
+//                    "INVALID_MISSION_STATUS",
+//                    "Mission phải ở trạng thái RUNNING"
+//            );
+//        }
+//
+//        if (!Boolean.TRUE.equals(request.getCompleted())) {
+//            throw BusinessException.invalid(
+//                    "PARTIAL_RESULTS_NOT_SUPPORTED",
+//                    "Phiên bản này chỉ nhận báo cáo cuối cùng"
+//            );
+//        }
+//
+//        List<MissionNode> missionNodes =
+//                missionNodeRepository.findByMission_MissionId(missionId);
+//
+//        Map<UUID, MissionNode> nodeMap = missionNodes.stream()
+//                .collect(Collectors.toMap(
+//                        MissionNode::getNodeId,
+//                        Function.identity()
+//                ));
+//
+//        Set<UUID> receivedNodeIds = new HashSet<>();
+//
+//        int successCount = 0;
+//        int failedCount = 0;
+//
+//        for (MissionNodeResultRequest item : request.getResults()) {
+//
+//            if (!receivedNodeIds.add(item.getNodeId())) {
+//                throw BusinessException.invalid(
+//                        "DUPLICATE_NODE_RESULT",
+//                        "NodeId bị trùng trong kết quả"
+//                );
+//            }
+//            if (item.getResult() == NodeResultStatus.SUCCESS
+//                    && item.getRecordsCount() == 0) {
+//                throw BusinessException.invalid(
+//                        "INVALID_SUCCESS_RESULT",
+//                        "Node SUCCESS phải có ít nhất một bản ghi"
+//                );
+//            }
+//
+//            if (item.getResult() == NodeResultStatus.FAILED
+//                    && item.getRecordsCount() > 0) {
+//                throw BusinessException.invalid(
+//                        "INVALID_FAILED_RESULT",
+//                        "Node FAILED không được có bản ghi thành công"
+//                );
+//            }
+//
+//            MissionNode node = nodeMap.get(item.getNodeId());
+//
+//            if (node == null) {
+//                throw BusinessException.invalid(
+//                        "INVALID_NODE",
+//                        "Node không thuộc Mission"
+//                );
+//            }
+//
+//            String currentResult = node.getResult();
+//            String incomingResult = item.getResult().name();
+//
+//            if (currentResult != null
+//                    && !"PENDING".equals(currentResult)
+//                    && !currentResult.equals(incomingResult)) {
+//
+//                throw BusinessException.invalid(
+//                        "NODE_RESULT_CONFLICT",
+//                        "Kết quả cuối cùng của Node không khớp với Progress"
+//                );
+//            }
+//
+//
+//            node.setResult(item.getResult().name());
+//            node.setRecordsCount(item.getRecordsCount());
+//            node.setAttempts(item.getAttempts());
+//            node.setCollectedAt(item.getCollectedAt());
+//            node.setErrorCode(item.getErrorCode());
+//            node.setErrorMessage(item.getErrorMessage());
+//
+//            if (item.getResult() == NodeResultStatus.SUCCESS) {
+//                successCount++;
+//            } else {
+//                failedCount++;
+//            }
+//        }
+//
+//        if (receivedNodeIds.size() != missionNodes.size()) {
+//            throw BusinessException.invalid(
+//                    "INCOMPLETE_MISSION_RESULTS",
+//                    "Báo cáo cuối cùng phải có kết quả cho tất cả Node"
+//            );
+//        }
+//
+//        missionNodeRepository.saveAll(missionNodes);
+//
+//        mission.setSuccessNodes(successCount);
+//        mission.setFailedNodes(failedCount);
+//
+//        MissionStatus oldStatus1 = mission.getStatus();
+//
+//        if (failedCount == 0) {
+//            String oldStatus = String.valueOf(mission.getStatus());
+//
+//            mission.setStatus(MissionStatus.COMPLETED);
+//
+//            createMissionStatusLog(
+//                    mission,
+//                    oldStatus,
+//                    "COMPLETED",
+//                    mission.getCreatedBy(),
+//                    "OPERATOR",
+//                    "Mission completed"
+//            );
+//        } else if (successCount == 0) {
+//            String oldStatus = String.valueOf(mission.getStatus());
+//
+//            mission.setStatus(MissionStatus.FAILED);
+//
+//            createMissionStatusLog(
+//                    mission,
+//                    oldStatus,
+//                    "FAILED",
+//                    mission.getCreatedBy(),
+//                    "OPERATOR",
+//                    "Mission failed"
+//            );
+//        } else {
+//            String oldStatus = String.valueOf(mission.getStatus());
+//
+//            mission.setStatus(MissionStatus.PARTIAL);
+//
+//            createMissionStatusLog(
+//                    mission,
+//                    oldStatus,
+//                    "PARTIAL",
+//                    mission.getCreatedBy(),
+//                    "OPERATOR",
+//                    "Mission partial"
+//            );
+//        }
+//
+//
+//        Instant finishedAt = Instant.now();
+//        mission.setEndedAt(finishedAt);
+//
+//        if (execution.getStatus() != MissionExecutionStatus.EXECUTING) {
+//            throw BusinessException.invalid(
+//                    "INVALID_EXECUTION_STATUS",
+//                    "Execution phải ở trạng thái EXECUTING"
+//            );
+//        }
+//
+//        MissionExecutionStatus executionStatus =
+//                mission.getStatus() == MissionStatus.FAILED
+//                        ? MissionExecutionStatus.FAILED
+//                        : MissionExecutionStatus.COMPLETED;
+//
+//        execution.setStatus(executionStatus);
+//        missionExecutionRepository.save(execution);
+//
+//        Mission saved = missionRepository.save(mission);
+//
+//        publishMissionStatusChanged(saved, oldStatus1);
+//
+//
+//        // Cần lưu MissionStatusLog khi trạng thái thay đổi.
+//
+//        MissionResponse response = missionMapper.toMissionResponse(saved);
+//
+//        List<Waypoint> waypoints =
+//                waypointRepository.findByMission_MissionIdOrderBySeqAsc(
+//                        saved.getMissionId()
+//                );
+//
+//        response.setWaypoints(
+//                waypoints.stream()
+//                        .map(missionMapper::toWaypointResponse)
+//                        .toList()
+//        );
+//
+//        response.setNodeIds(
+//                missionNodes.stream()
+//                        .map(MissionNode::getNodeId)
+//                        .toList()
+//        );
+//
+//        return response;
+//    }
 
     @Transactional
     public MissionResponse planMission(UUID missionId) {
@@ -758,4 +1190,276 @@ public class MissionService {
 
         return response;
     }
+
+    private boolean isSameMissionResults(
+            List<MissionNode> missionNodes,
+            MissionResultRequest request
+    ) {
+        if (!Boolean.TRUE.equals(request.getCompleted())) {
+            return false;
+        }
+
+        if (missionNodes.size() != request.getResults().size()) {
+            return false;
+        }
+
+        Map<UUID, MissionNode> nodeMap = missionNodes.stream()
+                .collect(Collectors.toMap(
+                        MissionNode::getNodeId,
+                        Function.identity()
+                ));
+
+        Set<UUID> receivedNodeIds = new HashSet<>();
+
+        for (MissionNodeResultRequest item : request.getResults()) {
+
+            if (!receivedNodeIds.add(item.getNodeId())) {
+                return false;
+            }
+
+            MissionNode node = nodeMap.get(item.getNodeId());
+
+            if (node == null) {
+                return false;
+            }
+
+            if (!Objects.equals(node.getResult(), item.getResult().name())
+                    || !Objects.equals(node.getRecordsCount(), item.getRecordsCount())
+                    || !Objects.equals(node.getAttempts(), item.getAttempts())
+                    || !Objects.equals(node.getCollectedAt(), item.getCollectedAt())
+                    || !Objects.equals(node.getErrorCode(), item.getErrorCode())
+                    || !Objects.equals(node.getErrorMessage(), item.getErrorMessage())) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+
+    @Transactional(readOnly = true)
+    public MissionExecutionProgressResponse getExecutionProgress(
+            UUID missionId,
+            UUID executionId,
+            String clientId
+    ) {
+        // 1. Validate Simulator identity
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        // 2. Find Execution
+        MissionExecution execution = missionExecutionRepository
+                .findByExecutionIdAndMission_MissionId(
+                        executionId,
+                        missionId
+                )
+                .orElseThrow(() -> BusinessException.notFound(
+                        "EXECUTION_NOT_FOUND",
+                        "Không tìm thấy Mission Execution"
+                ));
+
+        // 3. Verify Simulator ownership
+        if (!clientId.equals(execution.getAssignedClientId())) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_NOT_ASSIGNED",
+                    "Simulator không được phân công Mission này"
+            );
+        }
+
+        // 4. Return current Execution state
+        return new MissionExecutionProgressResponse(
+                missionId,
+                execution.getExecutionId(),
+                execution.getStatus().name(),
+                execution.getLastConfirmedSequence(),
+                execution.getAcknowledgedAt(),
+                execution.getLastHeartbeatAt()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<RecoverableMissionResponse> getRecoverableMissions(
+            String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        Instant heartbeatCutoff = Instant.now().minusSeconds(30);
+
+        return missionExecutionRepository.findRecoveryCandidates(
+                        clientId,
+                        MissionExecutionStatus.EXECUTING,
+                        MissionStatus.RUNNING,
+                        heartbeatCutoff
+                ).stream()
+                .map(execution -> {
+                    Mission mission = execution.getMission();
+
+                    return new RecoverableMissionResponse(
+                            mission.getMissionId(),
+                            execution.getExecutionId(),
+                            mission.getFarmId(),
+                            mission.getUavId(),
+                            mission.getGatewayId()
+                    );
+                })
+                .toList();
+    }
+
+    @Transactional
+    public MissionRecoveryClaimResponse claimRecovery(
+            UUID missionId,
+            MissionRecoveryClaimRequest request,
+            String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.executionId()
+        );
+
+        Mission mission = execution.getMission();
+
+        if (!clientId.equals(execution.getAssignedClientId())) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_NOT_ASSIGNED",
+                    "Simulator không được phân công Mission này"
+            );
+        }
+
+        if (mission.getStatus() != MissionStatus.RUNNING
+                || execution.getStatus() != MissionExecutionStatus.EXECUTING) {
+            throw BusinessException.invalid(
+                    "MISSION_NOT_RECOVERABLE",
+                    "Mission không ở trạng thái có thể Recovery"
+            );
+        }
+
+        Instant now = Instant.now();
+
+        if (execution.getLastHeartbeatAt() != null
+                && !execution.getLastHeartbeatAt()
+                .isBefore(now.minusSeconds(30))) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_STILL_ACTIVE",
+                    "Heartbeat vẫn còn hoạt động"
+            );
+        }
+
+        if (execution.getRecoveryLeaseUntil() != null
+                && execution.getRecoveryLeaseUntil().isAfter(now)) {
+            throw BusinessException.invalid(
+                    "RECOVERY_ALREADY_CLAIMED",
+                    "Execution đang được một instance khác sở hữu"
+            );
+        }
+
+        long generation = execution.getRecoveryGeneration() + 1;
+        Instant leaseUntil = now.plusSeconds(60);
+
+        execution.setRecoveryOwnerId(request.instanceId().toString());
+        execution.setRecoveryLeaseUntil(leaseUntil);
+        execution.setRecoveryGeneration(generation);
+
+        missionExecutionRepository.save(execution);
+
+        return new MissionRecoveryClaimResponse(
+                missionId,
+                execution.getExecutionId(),
+                request.instanceId(),
+                generation,
+                leaseUntil
+        );
+    }
+
+    @Transactional
+    public MissionRecoveryClaimResponse renewRecoveryLease(
+            UUID missionId,
+            MissionRecoveryRenewRequest request,
+            String clientId
+    ) {
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.executionId()
+        );
+
+        Instant now = Instant.now();
+
+        if (clientId == null
+                || !clientId.equals(execution.getAssignedClientId())
+                || !request.instanceId().toString()
+                .equals(execution.getRecoveryOwnerId())
+                || request.recoveryGeneration()
+                != execution.getRecoveryGeneration()) {
+            throw BusinessException.invalid(
+                    "RECOVERY_OWNERSHIP_MISMATCH",
+                    "Simulator không sở hữu Recovery này"
+            );
+        }
+
+        if (execution.getMission().getStatus() != MissionStatus.RUNNING
+                || execution.getStatus() != MissionExecutionStatus.EXECUTING) {
+            throw BusinessException.invalid(
+                    "MISSION_NOT_EXECUTING",
+                    "Mission không còn thực thi"
+            );
+        }
+
+        if (execution.getRecoveryLeaseUntil() == null
+                || !execution.getRecoveryLeaseUntil().isAfter(now)) {
+            throw BusinessException.invalid(
+                    "RECOVERY_LEASE_EXPIRED",
+                    "Recovery lease đã hết hạn"
+            );
+        }
+
+        Instant leaseUntil = now.plusSeconds(60);
+        execution.setRecoveryLeaseUntil(leaseUntil);
+
+        missionExecutionRepository.save(execution);
+
+        return new MissionRecoveryClaimResponse(
+                missionId,
+                execution.getExecutionId(),
+                request.instanceId(),
+                execution.getRecoveryGeneration(),
+                leaseUntil
+        );
+    }
+
+    private void validateRecoveryOwnership(
+            MissionExecution execution,
+            UUID instanceId,
+            long generation
+    ) {
+        if (execution.getRecoveryOwnerId() == null) {
+            return;
+        }
+
+        if (instanceId == null
+                || !execution.getRecoveryOwnerId().equals(instanceId.toString())
+                || execution.getRecoveryGeneration() != generation
+                || execution.getRecoveryLeaseUntil() == null
+                || !execution.getRecoveryLeaseUntil().isAfter(Instant.now())) {
+            throw BusinessException.invalid(
+                    "RECOVERY_OWNERSHIP_MISMATCH",
+                    "Simulator không còn quyền cập nhật execution"
+            );
+        }
+    }
+
 }

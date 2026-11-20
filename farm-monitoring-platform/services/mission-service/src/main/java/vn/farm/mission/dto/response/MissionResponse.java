@@ -26,6 +26,8 @@ public class MissionResponse {
     String status;
     Instant plannedAt;
     int totalNodes;
+    int successNodes;
+    int failedNodes;
     List<UUID> nodeIds;
     List<WaypointResponse> waypoints;
 }
