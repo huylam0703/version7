@@ -1,6 +1,8 @@
 package vn.farm.sensordata.application;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -9,6 +11,7 @@ import vn.farm.sensordata.domain.SensorReading;
 import vn.farm.sensordata.persistence.SensorReadingRepository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -64,6 +67,19 @@ public class SensorReadingService {
                 "message", "Sensor reading saved",
                 "id", saved.getId()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<SensorReading> getLatestReadings(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 500));
+
+        return repository.findAll(
+                PageRequest.of(
+                        0,
+                        safeLimit,
+                        Sort.by(Sort.Direction.DESC, "measuredAt")
+                )
+        ).getContent();
     }
 
     private String validateSensorValue(String sensorType, Double value) {

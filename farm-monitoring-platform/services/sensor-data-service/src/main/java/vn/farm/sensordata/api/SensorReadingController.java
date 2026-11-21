@@ -6,7 +6,9 @@ import org.springframework.web.bind.annotation.*;
 
 import vn.farm.sensordata.api.dto.SensorReadingRequest;
 import vn.farm.sensordata.application.SensorReadingService;
+import vn.farm.sensordata.domain.SensorReading;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -17,6 +19,13 @@ public class SensorReadingController {
 
     public SensorReadingController(SensorReadingService service) {
         this.service = service;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<SensorReading>> getReadings(
+            @RequestParam(defaultValue = "100") int limit) {
+
+        return ResponseEntity.ok(service.getLatestReadings(limit));
     }
 
     @PostMapping
