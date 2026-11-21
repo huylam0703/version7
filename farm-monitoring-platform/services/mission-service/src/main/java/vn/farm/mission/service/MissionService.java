@@ -1351,14 +1351,26 @@ public class MissionService {
 
         Instant now = Instant.now();
 
-        if (execution.getLastHeartbeatAt() != null
-                && !execution.getLastHeartbeatAt()
-                .isBefore(now.minusSeconds(30))) {
+
+
+        Instant lastActivityAt = getLastActivityAt(execution);
+        Instant recoveryDeadline = getRecoveryDeadline(execution);
+
+        if (!lastActivityAt.isBefore(now.minusSeconds(30))) {
             throw BusinessException.invalid(
                     "SIMULATOR_STILL_ACTIVE",
-                    "Heartbeat vẫn còn hoạt động"
+                    "Heartbeat chưa quá hạn 30 giây"
             );
         }
+
+        if (!now.isBefore(recoveryDeadline)) {
+            throw BusinessException.invalid(
+                    "RECOVERY_TIMEOUT",
+                    "Đã hết thời gian cho phép khôi phục Mission"
+            );
+        }
+
+
 
         if (execution.getRecoveryLeaseUntil() != null
                 && execution.getRecoveryLeaseUntil().isAfter(now)) {
@@ -1370,6 +1382,10 @@ public class MissionService {
 
         long generation = execution.getRecoveryGeneration() + 1;
         Instant leaseUntil = now.plusSeconds(60);
+
+        if (leaseUntil.isAfter(recoveryDeadline)) {
+            leaseUntil = recoveryDeadline;
+        }
 
         execution.setRecoveryOwnerId(request.instanceId().toString());
         execution.setRecoveryLeaseUntil(leaseUntil);
@@ -1427,7 +1443,22 @@ public class MissionService {
             );
         }
 
+
+        Instant recoveryDeadline = getRecoveryDeadline(execution);
+
+        if (!now.isBefore(recoveryDeadline)) {
+            throw BusinessException.invalid(
+                    "RECOVERY_TIMEOUT",
+                    "Đã hết thời gian cho phép khôi phục Mission"
+            );
+        }
+
+
         Instant leaseUntil = now.plusSeconds(60);
+
+        if (leaseUntil.isAfter(recoveryDeadline)) {
+            leaseUntil = recoveryDeadline;
+        }
         execution.setRecoveryLeaseUntil(leaseUntil);
 
         missionExecutionRepository.save(execution);
@@ -1460,6 +1491,108 @@ public class MissionService {
                     "Simulator không còn quyền cập nhật execution"
             );
         }
+    }
+
+
+    private Instant getLastActivityAt(MissionExecution execution) {
+        if (execution.getLastHeartbeatAt() != null) {
+            return execution.getLastHeartbeatAt();
+        }
+
+        if (execution.getAcknowledgedAt() != null) {
+            return execution.getAcknowledgedAt();
+        }
+
+        return execution.getStartedAt();
+    }
+
+    private Instant getRecoveryDeadline(MissionExecution execution) {
+        Instant lastActivityAt = getLastActivityAt(execution);
+
+        if (lastActivityAt == null) {
+            throw BusinessException.invalid(
+                    "RECOVERY_ACTIVITY_NOT_FOUND",
+                    "Không xác định được thời điểm hoạt động cuối cùng"
+            );
+        }
+
+        return lastActivityAt.plusSeconds(150);
+    }
+
+
+    @Transactional
+    public void failMissionOnHeartbeatTimeout(UUID executionId) {
+
+        MissionExecution candidate = missionExecutionRepository
+                .findById(executionId)
+                .orElse(null);
+
+        if (candidate == null) {
+            return;
+        }
+
+        UUID missionId = candidate.getMission().getMissionId();
+
+        // Khóa theo thứ tự Mission -> Execution.
+        MissionExecution execution =
+                executionLockService.lock(missionId, executionId);
+
+        Mission mission = execution.getMission();
+
+        // Không xử lý Mission đã kết thúc.
+        if (mission.getStatus() != MissionStatus.RUNNING
+                || execution.getStatus()
+                != MissionExecutionStatus.EXECUTING) {
+            return;
+        }
+
+        Instant lastActivityAt = getLastActivityAt(execution);
+
+        if (lastActivityAt == null) {
+            log.warn(
+                    "Cannot determine last activity: executionId={}",
+                    executionId
+            );
+            return;
+        }
+
+        Instant now = Instant.now();
+        Instant deadline = lastActivityAt.plusSeconds(150);
+
+        // Kiểm tra lại sau khi đã khóa database.
+        if (now.isBefore(deadline)) {
+            return;
+        }
+
+        MissionStatus oldStatus = mission.getStatus();
+
+        execution.setStatus(MissionExecutionStatus.FAILED);
+        execution.setRecoveryOwnerId(null);
+        execution.setRecoveryLeaseUntil(null);
+
+        mission.setStatus(MissionStatus.FAILED);
+        mission.setEndedAt(now);
+
+        missionExecutionRepository.save(execution);
+        missionRepository.save(mission);
+
+        createMissionStatusLog(
+                mission,
+                oldStatus.name(),
+                MissionStatus.FAILED.name(),
+                mission.getCreatedBy(),
+                "SYSTEM",
+                "Heartbeat timeout - recovery deadline exceeded"
+        );
+
+        publishMissionStatusChanged(mission, oldStatus);
+
+        log.warn(
+                "Mission failed due to heartbeat timeout: " +
+                        "missionId={}, executionId={}",
+                missionId,
+                executionId
+        );
     }
 
 }

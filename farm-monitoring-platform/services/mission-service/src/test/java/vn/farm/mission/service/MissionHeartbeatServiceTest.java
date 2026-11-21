@@ -2,6 +2,7 @@ package vn.farm.mission.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
 import vn.farm.core.BusinessException;
 import vn.farm.mission.dto.request.MissionHeartbeatRequest;
 import vn.farm.mission.dto.response.MissionHeartbeatResponse;
@@ -27,12 +28,26 @@ class MissionHeartbeatServiceTest {
     private MissionExecution execution;
     private MissionHeartbeatRequest request;
 
+    @Mock
+    private MissionExecutionRepository missionExecutionRepository;
+
+    @Mock
+    private MissionRecoveryOwnershipValidator ownershipValidator;
+
+    @Mock
+    private MissionExecutionLockService lockService;
+
     @BeforeEach
     void setUp() {
         executionRepository = mock(MissionExecutionRepository.class);
+        ownershipValidator = mock(MissionRecoveryOwnershipValidator.class);
+        lockService = mock(MissionExecutionLockService.class);
 
-        heartbeatService =
-                new MissionHeartbeatService(executionRepository);
+        heartbeatService = new MissionHeartbeatService(
+                executionRepository,
+                ownershipValidator,
+                lockService
+        );
 
         missionId = UUID.randomUUID();
         executionId = UUID.randomUUID();
@@ -48,7 +63,11 @@ class MissionHeartbeatServiceTest {
                 .assignedClientId(clientId)
                 .build();
 
-        request = new MissionHeartbeatRequest(executionId);
+        request = new MissionHeartbeatRequest(
+                missionId,
+                executionId,
+                1L
+        );
     }
 
     @Test
