@@ -1,21 +1,16 @@
 package uav_gateway_simulator.client;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
-import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.dto.response.*;
+import uav_gateway_simulator.dto.request.*;
 import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
 import uav_gateway_simulator.service.RecoveryLeaseRegistry;
 import uav_gateway_simulator.service.TokenService;
-import uav_gateway_simulator.dto.MissionHeartbeatRequest;
 import uav_gateway_simulator.dto.MissionHeartbeatResponse;
-import uav_gateway_simulator.dto.MissionResultRequest;
-import uav_gateway_simulator.dto.MissionResultResponse;
-import uav_gateway_simulator.dto.MissionProgressDetailResponse;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.client.ClientHttpResponse;
 
 import java.util.List;

@@ -2,7 +2,7 @@
 package uav_gateway_simulator.service;
 
 import org.springframework.stereotype.Component;
-import uav_gateway_simulator.dto.MissionRecoveryClaimResponse;
+import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 
 import java.time.Instant;
 import java.util.Set;

@@ -1,14 +1,13 @@
 package uav_gateway_simulator.client;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import uav_gateway_simulator.config.AuthProperties;
-import uav_gateway_simulator.dto.TokenResponse;
+import uav_gateway_simulator.dto.response.TokenResponse;
 
 @Component
 @RequiredArgsConstructor

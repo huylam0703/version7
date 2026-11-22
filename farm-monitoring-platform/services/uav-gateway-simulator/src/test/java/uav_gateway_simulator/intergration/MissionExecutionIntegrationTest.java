@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.dto.response.*;
+import uav_gateway_simulator.dto.request.MissionProgressRequest;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
 import uav_gateway_simulator.service.*;
 
 import java.math.BigDecimal;
@@ -65,8 +68,16 @@ class MissionExecutionIntegrationTest {
         RecoveryLeaseRegistry registry = new RecoveryLeaseRegistry();
         MissionResultPayloadStore store = new MissionResultPayloadStore();
 
+        MissionCancellationService cancellationService =
+                mock(MissionCancellationService.class);
+
         WaypointSimulationService waypointService =
-                new WaypointSimulationService(client, registry);
+                new WaypointSimulationService(
+                        client,
+                        registry,
+                        cancellationService
+                );
+
 
         ReflectionTestUtils.setField(
                 waypointService, "waypointDelayMs", 0L
@@ -74,7 +85,10 @@ class MissionExecutionIntegrationTest {
 
         MissionResultSimulationService resultService =
                 new MissionResultSimulationService(
-                        client, store, registry
+                        client,
+                        store,
+                        registry,
+                        cancellationService
                 );
 
         MissionHeartbeatScheduler heartbeat =
@@ -94,8 +108,10 @@ class MissionExecutionIntegrationTest {
                         resultService,
                         tracker,
                         resumePlanner,
-                        leaseManager
+                        leaseManager,
+                        cancellationService
                 );
+
 
         when(client.getMissionDetail(missionId))
                 .thenReturn(mission);

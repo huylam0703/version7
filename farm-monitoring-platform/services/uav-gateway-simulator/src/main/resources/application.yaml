@@ -15,6 +15,8 @@ spring:
 integration:
   mission:
     base-url: ${MISSION_SERVICE_BASE_URL:http://localhost:8083/api/v1/mission/missions}
+  sensor-data:
+    base-url: ${SENSOR_DATA_BASE_URL:http://localhost:8084}
 
   farm-device:
     base-url: ${FARM_DEVICE_BASE_URL:http://localhost:8082}

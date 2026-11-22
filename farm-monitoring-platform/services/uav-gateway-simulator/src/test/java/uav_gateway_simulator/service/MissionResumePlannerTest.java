@@ -4,8 +4,8 @@ package uav_gateway_simulator.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import uav_gateway_simulator.client.MissionClient;
-import uav_gateway_simulator.dto.MissionExecutionProgressResponse;
-import uav_gateway_simulator.dto.MissionProgressDetailResponse;
+import uav_gateway_simulator.dto.response.MissionExecutionProgressResponse;
+import uav_gateway_simulator.dto.response.MissionProgressDetailResponse;
 import uav_gateway_simulator.dto.MissionResumePlan;
 
 import java.time.Instant;

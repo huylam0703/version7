@@ -15,7 +15,8 @@ public class MissionExecutionTracker {
         RESULTS_PENDING,
         RESULTS_RETRY,
         COMPLETED,
-        FAILED
+        FAILED,
+        CANCELLED
     }
 
 
@@ -99,13 +100,14 @@ public class MissionExecutionTracker {
         executions.computeIfPresent(
                 executionId,
                 (id, status) -> {
-                    if (status == Status.COMPLETED) {
+                    if (status == Status.COMPLETED || status == Status.CANCELLED) {
                         return status;
                     }
 
                     if (status == Status.RESULTS_RETRY) {
                         return status;
                     }
+
 
                     return Status.FAILED;
                 }
@@ -192,7 +194,7 @@ public class MissionExecutionTracker {
         executions.computeIfPresent(
                 executionId,
                 (id, status) ->
-                        status == Status.COMPLETED
+                        status == Status.COMPLETED || status == Status.CANCELLED
                                 ? status
                                 : Status.FAILED
         );
@@ -201,6 +203,25 @@ public class MissionExecutionTracker {
         if (executionId != null) {
             recoveryPreviousStatuses.remove(executionId);
         }
+    }
+    public boolean cancel(UUID executionId) {
+        if (executionId == null) {
+            return false;
+        }
+
+        final boolean[] cancelled = {false};
+
+        executions.computeIfPresent(executionId, (id, status) -> {
+            if (status == Status.COMPLETED || status == Status.CANCELLED) {
+                return status;
+            }
+
+            cancelled[0] = true;
+            return Status.CANCELLED;
+        });
+
+        recoveryPreviousStatuses.remove(executionId);
+        return cancelled[0];
     }
 
 }

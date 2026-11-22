@@ -2,7 +2,7 @@
 package uav_gateway_simulator.service;
 
 import org.springframework.stereotype.Component;
-import uav_gateway_simulator.dto.MissionResultRequest;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;

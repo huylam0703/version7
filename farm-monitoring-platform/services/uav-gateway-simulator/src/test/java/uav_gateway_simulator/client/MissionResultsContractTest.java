@@ -3,8 +3,8 @@ package uav_gateway_simulator.client;
 
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import uav_gateway_simulator.dto.ApiResponse;
-import uav_gateway_simulator.dto.MissionResultResponse;
+import uav_gateway_simulator.dto.response.ApiResponse;
+import uav_gateway_simulator.dto.response.MissionResultResponse;
 
 import java.util.UUID;
 
