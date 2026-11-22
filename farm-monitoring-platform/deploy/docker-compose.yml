@@ -146,6 +146,9 @@ services:
        RABBITMQ_USER: ${RABBITMQ_USER:-guest}
        RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
      ports: ["8082:8080"]
+     networks:
+      - default
+      - farm-network
 
   mission-service:
      build:
