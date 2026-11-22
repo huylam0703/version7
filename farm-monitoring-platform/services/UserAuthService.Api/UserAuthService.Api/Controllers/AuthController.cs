@@ -1,7 +1,7 @@
-using Farm.BuildingBlocks.Abstractions;
+﻿using Farm.BuildingBlocks.Abstractions;
 using Farm.BuildingBlocks.Web;
 
-using Farm.BuildingBlocks.Application;
+using MediatR;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,11 +14,11 @@ namespace UserAuthService.Api.Controllers
     [Route("api/v1/auth")]
     public class AuthController : ControllerBase
     {
-        private readonly IRequestExecutor _executor;
+        private readonly ISender _mediator;
 
-        public AuthController(IRequestExecutor executor)
+        public AuthController(ISender mediator)
         {
-            _executor = executor;
+            _mediator = mediator;
         }
 
         #region Commands
@@ -29,7 +29,7 @@ namespace UserAuthService.Api.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> LoginAsync([FromBody] LoginCommand command, CancellationToken ct)
         {
-            var result = await _executor.Execute(command, ct);
+            var result = await _mediator.Send(command, ct);
             return result.ToActionResult(message: "Đăng nhập thành công.");
         }
 
@@ -43,7 +43,7 @@ namespace UserAuthService.Api.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> RefreshAsync([FromBody] RefreshTokenCommand command, CancellationToken ct)
         {
-            var result = await _executor.Execute(command, ct);
+            var result = await _mediator.Send(command, ct);
             return result.ToActionResult(message: "Làm mới token thành công.");
         }
 
@@ -57,7 +57,7 @@ namespace UserAuthService.Api.Controllers
         [AllowAnonymous] 
         public async Task<IActionResult> LogoutAsync([FromBody] LogoutCommand command, CancellationToken ct)
         {
-            var result = await _executor.Execute(command, ct);
+            var result = await _mediator.Send(command, ct);
             return result.ToActionResult(message: "Đăng xuất thành công.");
         }
         #endregion

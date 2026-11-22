@@ -1,7 +1,8 @@
-using System.Data;
+﻿using System.Data;
 
 using Dapper;
 
+using MediatR;
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;

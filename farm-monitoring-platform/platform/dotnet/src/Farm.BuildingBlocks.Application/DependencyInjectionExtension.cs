@@ -1,24 +1,30 @@
-using System.Reflection;
+﻿using System.Reflection;
+
 using FluentValidation;
+
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Farm.BuildingBlocks.Application;
 
 public static class DependencyInjectionExtension
 {
-    public static IServiceCollection AddFarmApplication(this IServiceCollection services, Assembly assembly)
+    public static IServiceCollection AddFarmApplication(
+        this IServiceCollection services, Assembly assembly, string? mediatrLicenseKey = null)
     {
-        services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);
-        services.AddScoped<IRequestExecutor, RequestExecutor>();
-        return services;
-    }
+        services.AddMediatR(cfg =>
+        {
+            cfg.RegisterServicesFromAssembly(assembly);                  // quét handler
 
-    public static IServiceCollection AddRequestHandlers(this IServiceCollection services, Assembly assembly)
-    {
-        foreach (var type in assembly.GetTypes().Where(t => t.IsClass && !t.IsAbstract))
-            foreach (var service in type.GetInterfaces().Where(i => i.IsGenericType &&
-                i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>)))
-                services.AddScoped(service, type);
+            // Chỉ có ở MediatR 13 trở lên. Dùng bản 12.x thì XÓA dòng dưới.
+            if (!string.IsNullOrWhiteSpace(mediatrLicenseKey)) cfg.LicenseKey = mediatrLicenseKey;
+
+            // behavior đăng ký trước sẽ chạy ngoài cùng: Logging -> Validation -> UnitOfWork -> Handler
+            cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));
+            cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
+            cfg.AddOpenBehavior(typeof(UnitOfWorkBehavior<,>));
+        });
+
+        services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);
         return services;
     }
 }

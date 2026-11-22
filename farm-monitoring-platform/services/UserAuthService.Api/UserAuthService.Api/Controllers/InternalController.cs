@@ -1,6 +1,6 @@
-using Farm.BuildingBlocks.Web;
+﻿using Farm.BuildingBlocks.Web;
 
-using Farm.BuildingBlocks.Application;
+using MediatR;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,15 +22,15 @@ namespace UserAuthService.Api.Controllers
         /// <summary>
         /// 
         /// </summary>
-        private readonly IRequestExecutor _executor;
+        private readonly ISender _mediator;
 
         /// <summary>
         /// 
         /// </summary>
         /// <param name="mediator"></param>
-        public InternalUsersController(IRequestExecutor executor)
+        public InternalUsersController(ISender mediator)
         {
-            _executor = executor;
+            _mediator = mediator;
         }
 
         #region Queries
@@ -40,7 +40,7 @@ namespace UserAuthService.Api.Controllers
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetByIdAsync([FromRoute] Guid id, CancellationToken ct)
         {
-            var result = await _executor.Execute(new GetUserByIdQuery { UserId = id }, ct);
+            var result = await _mediator.Send(new GetUserByIdQuery { UserId = id }, ct);
             return result.ToActionResult();
         }
         #endregion

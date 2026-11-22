@@ -1,3 +1,4 @@
+﻿using MediatR;
 
 namespace Farm.BuildingBlocks.Abstractions;
 
@@ -52,6 +53,6 @@ public sealed class Result<T> : IResult, IResultFactory<Result<T>>
 
 public static class Result
 {
-    /// Command không trả dữ liệu (dùng Unit).
+    /// Command không trả dữ liệu (dùng MediatR.Unit).
     public static Result<Unit> Success() => Result<Unit>.Success(Unit.Value);
 }
