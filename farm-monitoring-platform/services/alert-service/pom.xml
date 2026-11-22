@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>vn.farm.platform</groupId>
+    <artifactId>farm-platform-parent</artifactId>
+    <version>1.0.0</version>
+    <relativePath>../../platform/java/pom.xml</relativePath>
+  </parent>
+
+  <groupId>vn.farm</groupId>
+  <artifactId>alert-service</artifactId>
+  <version>1.0.0</version>
+
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+
+  <dependencies>
+
+    <!-- Farm Spring Boot Starter -->
+    <dependency>
+      <groupId>vn.farm.platform</groupId>
+      <artifactId>farm-spring-boot-starter</artifactId>
+    </dependency>
+
+    <!-- Farm Contracts -->
+    <dependency>
+      <groupId>vn.farm.platform</groupId>
+      <artifactId>farm-contracts</artifactId>
+    </dependency>
+
+    <!-- RabbitMQ - Alert Event Publishing -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-amqp</artifactId>
+    </dependency>
+
+    <!-- SQL Server JDBC Driver -->
+    <dependency>
+      <groupId>com.microsoft.sqlserver</groupId>
+      <artifactId>mssql-jdbc</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- Lombok -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!-- MapStruct -->
+    <dependency>
+      <groupId>org.mapstruct</groupId>
+      <artifactId>mapstruct</artifactId>
+      <version>1.6.3</version>
+    </dependency>
+
+    <!-- Spring Boot Test -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <plugins>
+
+      <!-- Maven Compiler -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+
+        <configuration>
+          <parameters>true</parameters>
+
+          <annotationProcessorPaths>
+
+            <!-- Lombok -->
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>1.18.40</version>
+            </path>
+
+            <!-- MapStruct Processor -->
+            <path>
+              <groupId>org.mapstruct</groupId>
+              <artifactId>mapstruct-processor</artifactId>
+              <version>1.6.3</version>
+            </path>
+
+            <!-- Lombok MapStruct Binding -->
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok-mapstruct-binding</artifactId>
+              <version>0.2.0</version>
+            </path>
+
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+
+      <!-- Spring Boot Maven Plugin -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+
+    </plugins>
+  </build>
+
+</project>
