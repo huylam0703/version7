@@ -26,6 +26,9 @@ public class Access {
     /** Ghi node/UAV/gateway (OPERATOR, ADMIN được phép thêm). Muốn bỏ ADMIN thì sửa ở đây. */
     public boolean deviceWrite() { return has("OPERATOR", "ADMIN"); }
 
+    /** API nội bộ (Simulator, service khác): chỉ SERVICE hoặc ADMIN. OPERATOR không được lấy endpoint thiết bị. */
+    public boolean internal() { return has("SERVICE", "ADMIN"); }
+
     private boolean has(String... roles) {
         if (!enabled) return true;
         Authentication a = SecurityContextHolder.getContext().getAuthentication();

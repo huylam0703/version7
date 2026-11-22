@@ -47,7 +47,8 @@ public final class Mappers {
     public static NodeResponse toDto(SensorNode n) {
         return new NodeResponse(n.getId(), n.getZone().getId(), n.getZone().getFarm().getId(), n.getDeviceUid(),
                 n.getName(), dbl(n.getLat()), dbl(n.getLng()), n.getFirmwareVer(), n.getStatus(),
-                n.getInstalledAt(), n.getChannels().stream().map(Mappers::toDto).toList(),
+                n.getInstalledAt(), n.getConnectionType(), n.getEndpointUrl(), n.getLastSeenAt(),
+                n.getChannels().stream().map(Mappers::toDto).toList(),
                 n.getCreatedAt(), n.getUpdatedAt());
     }
 

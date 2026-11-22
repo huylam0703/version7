@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import vn.farm.farmdevice.common.PageDto;
 import vn.farm.farmdevice.common.Paging;
 import vn.farm.farmdevice.dto.SensorDtos.CreateNodeRequest;
+import vn.farm.farmdevice.dto.SensorDtos.NodeConnectionResponse;
 import vn.farm.farmdevice.dto.SensorDtos.NodeResponse;
 import vn.farm.farmdevice.dto.SensorDtos.RotateCredentialRequest;
 import vn.farm.farmdevice.dto.SensorDtos.RotateCredentialResponse;
@@ -47,6 +48,13 @@ public class SensorNodeController {
     @PreAuthorize("@access.read()")
     public NodeResponse get(@PathVariable UUID nodeId) {
         return service.get(nodeId);
+    }
+
+    /** Nội bộ cho Simulator: chỉ role SERVICE/ADMIN. 404 NODE_NOT_FOUND | 409 NODE_NOT_ACTIVE | 404 NODE_ENDPOINT_NOT_SET. */
+    @GetMapping("/{nodeId}/connection")
+    @PreAuthorize("@access.internal()")
+    public NodeConnectionResponse connection(@PathVariable UUID nodeId) {
+        return service.connection(nodeId);
     }
 
     @PatchMapping("/{nodeId}")

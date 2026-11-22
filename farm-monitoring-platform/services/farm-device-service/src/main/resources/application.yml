@@ -15,7 +15,7 @@ spring:
       ddl-auto: update
   flyway:
     enabled: true
-    locations: classpath:db/farm-starter
+    locations: classpath:db/farm-starter,classpath:db/farm-device
     baseline-on-migrate: true
     baseline-version: 0
 
