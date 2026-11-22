@@ -7,8 +7,10 @@ import org.junit.jupiter.api.Test;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
-import uav_gateway_simulator.dto.MissionResultRequest;
-import uav_gateway_simulator.dto.MissionNodeResultRequest;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
+import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
+import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
+import uav_gateway_simulator.exception.MissionCancelledException;
 
 import java.time.Instant;
 import java.util.List;
@@ -30,6 +32,10 @@ class MissionProcessingServiceTest {
     private MissionResultsRetryScheduler retryScheduler;
     private MissionResultPayloadStore payloadStore;
     private MissionResultSimulationService resultSimulationService;
+    private MissionClient missionClient;
+    private MissionRecoveryLeaseManager leaseManager;
+    private SimulatorInstanceIdentity instanceIdentity;
+    private RecoveryLeaseRegistry leaseRegistry;
 
 
     @BeforeEach
@@ -43,16 +49,10 @@ class MissionProcessingServiceTest {
 
         retryScheduler =
                 mock(MissionResultsRetryScheduler.class);
-        MissionClient missionClient = mock(MissionClient.class);
-
-        MissionRecoveryLeaseManager leaseManager =
-                mock(MissionRecoveryLeaseManager.class);
-
-        SimulatorInstanceIdentity instanceIdentity =
-                mock(SimulatorInstanceIdentity.class);
-
-        RecoveryLeaseRegistry leaseRegistry =
-                new RecoveryLeaseRegistry();
+        missionClient = mock(MissionClient.class);
+        leaseManager = mock(MissionRecoveryLeaseManager.class);
+        instanceIdentity = mock(SimulatorInstanceIdentity.class);
+        leaseRegistry = new RecoveryLeaseRegistry();
 
         payloadStore = new MissionResultPayloadStore();
 
@@ -353,5 +353,158 @@ class MissionProcessingServiceTest {
         assertNotNull(
                 payloadStore.get(executionId)
         );
+    }
+    @Test
+    void shouldMarkExecutionCancelledAndNotScheduleRetry()
+            throws Exception {
+
+        MissionReadyPayload payload = createPayload();
+        UUID executionId = payload.getExecutionId();
+
+        doThrow(new MissionCancelledException("Mission cancelled"))
+                .when(executionService)
+                .prepareMission(payload);
+
+        // Submit mission for asynchronous processing
+        processingService.submit(payload);
+
+        // Wait for the worker to finish exception handling
+        executor.submit(() -> {})
+                .get(5, TimeUnit.SECONDS);
+
+        // Execution must be marked CANCELLED
+        assertEquals(
+                MissionExecutionTracker.Status.CANCELLED,
+                tracker.getStatus(executionId)
+        );
+
+        // No pending Results payload
+        assertNull(payloadStore.get(executionId));
+
+        // Cancellation must not trigger Results Retry
+        verify(retryScheduler, never())
+                .schedule(any(UUID.class));
+
+        // Mission execution was attempted exactly once
+        verify(executionService, times(1))
+                .prepareMission(payload);
+
+        // Cancelled execution must not be restarted
+        assertFalse(tracker.tryStart(executionId));
+
+        // Cancelled execution must not be recovered
+        assertFalse(tracker.tryStartRecovery(executionId));
+    }
+    @Test
+    void shouldRemovePendingResultsPayloadWhenCancelled()
+            throws Exception {
+
+        MissionReadyPayload payload = createPayload();
+
+        UUID executionId = payload.getExecutionId();
+        UUID nodeId = UUID.randomUUID();
+
+        MissionNodeResultRequest nodeResult =
+                new MissionNodeResultRequest(
+                        nodeId,
+                        "SUCCESS",
+                        10,
+                        1,
+                        Instant.now(),
+                        null,
+                        null
+                );
+
+        MissionResultRequest request =
+                new MissionResultRequest(
+                        executionId,
+                        List.of(nodeResult),
+                        true
+                );
+
+        payloadStore.saveIfAbsent(
+                payload.getMissionId(),
+                request
+        );
+
+        assertNotNull(payloadStore.get(executionId));
+
+        doThrow(new MissionCancelledException("Mission cancelled"))
+                .when(executionService)
+                .prepareMission(payload);
+
+        processingService.submit(payload);
+
+        executor.submit(() -> {})
+                .get(5, TimeUnit.SECONDS);
+
+        assertEquals(
+                MissionExecutionTracker.Status.CANCELLED,
+                tracker.getStatus(executionId)
+        );
+
+        assertNull(payloadStore.get(executionId));
+
+        verify(retryScheduler, never())
+                .schedule(any(UUID.class));
+    }
+    @Test
+    void shouldCancelRecoveryAndCleanupLease() throws Exception {
+
+        MissionReadyPayload payload = createPayload();
+
+        UUID missionId = payload.getMissionId();
+        UUID executionId = payload.getExecutionId();
+        UUID instanceId = UUID.randomUUID();
+
+        // Recovery chỉ được bắt đầu khi execution FAILED.
+        assertTrue(tracker.tryStart(executionId));
+        tracker.fail(executionId);
+
+        when(instanceIdentity.getInstanceId())
+                .thenReturn(instanceId);
+
+        MissionRecoveryClaimResponse claim =
+                new MissionRecoveryClaimResponse(
+                        missionId,
+                        executionId,
+                        instanceId,
+                        1L,
+                        Instant.now().plusSeconds(120)
+                );
+
+        when(missionClient.claimRecovery(
+                missionId,
+                executionId,
+                instanceId
+        )).thenReturn(claim);
+
+        // Mission bị hủy trong quá trình Resume.
+        doThrow(new MissionCancelledException("Mission cancelled"))
+                .when(executionService)
+                .resumeMission(payload);
+
+        assertTrue(processingService.recover(payload));
+
+        // Đợi worker xử lý xong Cancellation.
+        executor.submit(() -> {})
+                .get(5, TimeUnit.SECONDS);
+
+        assertEquals(
+                MissionExecutionTracker.Status.CANCELLED,
+                tracker.getStatus(executionId)
+        );
+
+        verify(leaseManager).register(claim);
+        verify(leaseManager).remove(executionId);
+
+        verify(executionService).resumeMission(payload);
+
+        verify(retryScheduler, never())
+                .schedule(any(UUID.class));
+
+        assertNull(payloadStore.get(executionId));
+
+        assertFalse(tracker.tryStartRecovery(executionId));
     }
 }

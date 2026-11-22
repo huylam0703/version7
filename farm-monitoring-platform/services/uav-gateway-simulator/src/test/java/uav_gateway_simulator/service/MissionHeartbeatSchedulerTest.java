@@ -3,7 +3,9 @@ package uav_gateway_simulator.service;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.MissionHeartbeatResponse;
 
@@ -24,6 +26,7 @@ class MissionHeartbeatSchedulerTest {
     private MissionClient missionClient;
     private ScheduledExecutorService executor;
     private MissionHeartbeatScheduler scheduler;
+    private MissionCancellationService cancellationService;
 
     private UUID missionId;
     private UUID executionId;
@@ -34,13 +37,16 @@ class MissionHeartbeatSchedulerTest {
 
         executor = Executors.newScheduledThreadPool(2);
 
+        cancellationService = mock(MissionCancellationService.class);
+
         RecoveryLeaseRegistry leaseRegistry =
                 new RecoveryLeaseRegistry();
 
         scheduler = new MissionHeartbeatScheduler(
                 missionClient,
                 executor,
-                leaseRegistry
+                leaseRegistry,
+                cancellationService
         );
 
         ReflectionTestUtils.setField(
@@ -214,6 +220,46 @@ class MissionHeartbeatSchedulerTest {
         assertTrue(attempts.get() >= 2);
 
         verify(missionClient, atLeast(2))
+                .sendHeartbeat(missionId, executionId);
+    }
+    @Test
+    void shouldStopHeartbeatWhenMissionCancelled() throws Exception {
+
+        CountDownLatch cancellationChecked = new CountDownLatch(1);
+
+        when(missionClient.sendHeartbeat(missionId, executionId))
+                .thenThrow(
+                        new HttpClientErrorException(
+                                HttpStatus.BAD_REQUEST
+                        )
+                );
+
+        when(cancellationService.isCancelled(missionId))
+                .thenAnswer(invocation -> {
+                    cancellationChecked.countDown();
+                    return true;
+                });
+
+        scheduler.start(missionId, executionId);
+
+        assertTrue(
+                cancellationChecked.await(5, TimeUnit.SECONDS),
+                "Expected cancellation check after HTTP 400"
+        );
+
+        // Đồng bộ với executor để nhánh xử lý HTTP 400 hoàn tất.
+        executor.submit(() -> {}).get(5, TimeUnit.SECONDS);
+
+        verify(cancellationService, times(1))
+                .isCancelled(missionId);
+
+        verify(missionClient, times(1))
+                .sendHeartbeat(missionId, executionId);
+
+        // Chờ thêm vài chu kỳ heartbeat để xác nhận đã dừng.
+        Thread.sleep(100);
+
+        verify(missionClient, times(1))
                 .sendHeartbeat(missionId, executionId);
     }
 }

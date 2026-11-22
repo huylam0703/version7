@@ -1,4 +1,4 @@
-package uav_gateway_simulator.dto;
+package uav_gateway_simulator.dto.request;
 
 import java.time.Instant;
 import java.util.UUID;

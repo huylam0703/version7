@@ -6,8 +6,8 @@ import org.junit.jupiter.api.Test;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
-import uav_gateway_simulator.dto.MissionResultRequest;
-import uav_gateway_simulator.dto.MissionNodeResultRequest;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
+import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
 import uav_gateway_simulator.service.*;
 
 import java.time.Instant;
@@ -36,6 +36,8 @@ class MissionProcessingIntegrationTest {
         payloadStore = new MissionResultPayloadStore();
         retryScheduler = mock(MissionResultsRetryScheduler.class);
         executor = Executors.newSingleThreadExecutor();
+        MissionCancellationService cancellationService =
+                mock(MissionCancellationService.class);
 
         processingService = new MissionProcessingService(
                 executionService,

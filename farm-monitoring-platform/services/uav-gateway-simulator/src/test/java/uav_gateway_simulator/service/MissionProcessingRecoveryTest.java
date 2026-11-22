@@ -7,7 +7,7 @@ import org.mockito.InOrder;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
-import uav_gateway_simulator.dto.MissionRecoveryClaimResponse;
+import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 
 import java.time.Instant;
 import java.util.UUID;

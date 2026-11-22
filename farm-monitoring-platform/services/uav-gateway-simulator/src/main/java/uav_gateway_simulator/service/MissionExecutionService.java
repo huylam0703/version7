@@ -6,6 +6,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.dto.response.MissionAckResponse;
+import uav_gateway_simulator.dto.response.MissionDetailResponse;
+import uav_gateway_simulator.dto.response.MissionResultResponse;
+import uav_gateway_simulator.dto.response.WaypointResponse;
+import uav_gateway_simulator.exception.MissionCancelledException;
 import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
 
 import java.time.Instant;
@@ -23,6 +28,7 @@ public class MissionExecutionService {
     private final MissionExecutionTracker executionTracker;
     private final MissionResumePlanner missionResumePlanner;
     private final MissionRecoveryLeaseManager leaseManager;
+    private final MissionCancellationService cancellationService;
 
     public void prepareMission(MissionReadyPayload payload) {
 
@@ -128,8 +134,10 @@ public class MissionExecutionService {
         }
 
         // 8. Send ACK
+        cancellationService.checkNotCancelled(missionId);
         MissionAckResponse ackResponse =
                 missionClient.ackMission(missionId, executionId);
+
 
         // 9. Validate ACK response
         if (ackResponse == null) {
@@ -199,7 +207,7 @@ public class MissionExecutionService {
                     executionId
             );
 
-
+            cancellationService.checkNotCancelled(missionId);
             // 12. Mark Results Pending
             // Normal mission execution does not require a recovery lease.
             executionTracker.markResultsPending(executionId);
@@ -220,6 +228,8 @@ public class MissionExecutionService {
                         executionId,
                         nodeIds.size()
                 );
+
+                cancellationService.checkNotCancelled(missionId);
 
                 MissionResultResponse resultResponse =
                         missionResultSimulationService.simulateResults(
@@ -275,7 +285,17 @@ public class MissionExecutionService {
                         resultResponse.failedNodes()
                 );
 
-            } catch (Exception e) {
+            }
+            catch (MissionCancelledException e) {
+                log.info(
+                        "Mission Results skipped because mission was cancelled: missionId={}, executionId={}",
+                        missionId,
+                        executionId
+                );
+                throw e;
+
+            }
+            catch (Exception e) {
 
                 // Results failed, preserve retry state.
                 // MissionProcessingService will not restart Waypoints.
@@ -424,9 +444,11 @@ public class MissionExecutionService {
 
             // Waypoints completed. Recovery ownership must still be valid.
             leaseManager.requireValidLease(executionId);
+            cancellationService.checkNotCancelled(missionId);
             executionTracker.markResultsPending(executionId);
 
             try {
+                cancellationService.checkNotCancelled(missionId);
                 MissionResultResponse resultResponse =
                         missionResultSimulationService.simulateResults(
                                 missionId,
@@ -445,7 +467,17 @@ public class MissionExecutionService {
                     );
                 }
 
-            } catch (RecoveryOwnershipLostException e) {
+            }
+            catch (MissionCancelledException e) {
+                log.info(
+                        "Recovery Results skipped because mission was cancelled: missionId={}, executionId={}",
+                        missionId,
+                        executionId
+                );
+                throw e;
+
+            }
+            catch (RecoveryOwnershipLostException e) {
 
                 executionTracker.failDueToOwnershipLoss(executionId);
 
@@ -460,6 +492,13 @@ public class MissionExecutionService {
             } catch (Exception e) {
 
                 executionTracker.markResultsRetry(executionId);
+
+                log.error(
+                        "Mission Results failed, retry required: missionId={}, executionId={}",
+                        missionId,
+                        executionId,
+                        e
+                );
 
                 throw e;
             }

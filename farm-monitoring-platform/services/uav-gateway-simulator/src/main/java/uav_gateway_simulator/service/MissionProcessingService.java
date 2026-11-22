@@ -7,8 +7,8 @@ import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
-import uav_gateway_simulator.dto.MissionRecoveryClaimResponse;
-import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
+import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
+import uav_gateway_simulator.exception.MissionCancelledException;
 
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -38,6 +38,7 @@ public class MissionProcessingService {
         }
 
         UUID executionId = payload.getExecutionId();
+        UUID missionId = payload.getMissionId();
 
         // Retry Results without re-executing ACK or Waypoints
         if (executionTracker.getStatus(executionId)
@@ -80,7 +81,18 @@ public class MissionProcessingService {
                             executionId
                     );
 
-                } catch (Exception e) {
+                }
+                catch (MissionCancelledException e) {
+                    executionTracker.cancel(executionId);
+                    payloadStore.remove(executionId);
+
+                    log.info(
+                            "Mission simulation cancelled: missionId={}, executionId={}",
+                            missionId,
+                            executionId
+                    );
+                }
+                catch (Exception e) {
                     // Mark processing failure as FAILED.
                     // Preserve RESULTS_RETRY for the retry scheduler.
                     executionTracker.fail(executionId);
@@ -140,7 +152,18 @@ public class MissionProcessingService {
                             executionId
                     );
 
-                } catch (Exception e) {
+                }
+                catch (MissionCancelledException e) {
+                    executionTracker.cancel(executionId);
+                    payloadStore.remove(executionId);
+                    recoveryLeaseManager.remove(executionId);
+
+                    log.info(
+                            "Mission Results retry cancelled: executionId={}",
+                            executionId
+                    );
+                }
+                catch (Exception e) {
                     executionTracker.markResultsRetry(executionId);
 
                     log.error(
@@ -177,7 +200,8 @@ public class MissionProcessingService {
 
         if (currentStatus == MissionExecutionTracker.Status.RESULTS_PENDING
                 || currentStatus == MissionExecutionTracker.Status.RESULTS_RETRY
-                || currentStatus == MissionExecutionTracker.Status.COMPLETED) {
+                || currentStatus == MissionExecutionTracker.Status.COMPLETED
+                || currentStatus == MissionExecutionTracker.Status.CANCELLED) {
 
             log.info(
                     "Recovery skipped: executionId={}, status={}",
@@ -262,7 +286,26 @@ public class MissionProcessingService {
                     );
 
 
-                } catch (RejectedExecutionException e) {
+                }
+                catch (MissionCancelledException e) {
+                    executionTracker.cancel(executionId);
+                    payloadStore.remove(executionId);
+
+                    if (claimed) {
+                        recoveryLeaseManager.remove(executionId);
+                    } else {
+                        leaseRegistry.cancelBeforeClaim(executionId);
+                    }
+
+                    leaseRegistry.markLost(executionId);
+
+                    log.info(
+                            "Mission recovery cancelled: missionId={}, executionId={}",
+                            missionId,
+                            executionId
+                    );
+                }
+                catch (RejectedExecutionException e) {
 
                     // Khôi phục trạng thái trước khi bắt đầu Recovery.
                     boolean rolledBack =

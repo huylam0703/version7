@@ -68,6 +68,7 @@ public interface MissionExecutionRepository
             @Param("missionId") UUID missionId
     );
 
+
     @Query("""
     SELECT e
     FROM MissionExecution e
@@ -75,15 +76,42 @@ public interface MissionExecutionRepository
     WHERE e.assignedClientId = :clientId
       AND e.status = :executionStatus
       AND m.status = :missionStatus
-      AND (
-          e.lastHeartbeatAt IS NULL
-          OR e.lastHeartbeatAt < :heartbeatCutoff
-      )
+      AND COALESCE(
+          e.lastHeartbeatAt,
+          e.acknowledgedAt,
+          e.startedAt
+      ) < :heartbeatCutoff
     """)
     List<MissionExecution> findRecoveryCandidates(
             @Param("clientId") String clientId,
-            @Param("executionStatus") MissionExecutionStatus executionStatus,
-            @Param("missionStatus") MissionStatus missionStatus,
-            @Param("heartbeatCutoff") Instant heartbeatCutoff
+            @Param("executionStatus")
+            MissionExecutionStatus executionStatus,
+            @Param("missionStatus")
+            MissionStatus missionStatus,
+            @Param("heartbeatCutoff")
+            Instant heartbeatCutoff
     );
+
+
+    @Query("""
+    SELECT e.executionId
+    FROM MissionExecution e
+    JOIN e.mission m
+    WHERE e.status = :executionStatus
+      AND m.status = :missionStatus
+      AND COALESCE(
+          e.lastHeartbeatAt,
+          e.acknowledgedAt,
+          e.startedAt
+      ) < :timeoutCutoff
+    """)
+    List<UUID> findHeartbeatTimeoutCandidates(
+            @Param("executionStatus")
+            MissionExecutionStatus executionStatus,
+            @Param("missionStatus")
+            MissionStatus missionStatus,
+            @Param("timeoutCutoff")
+            Instant timeoutCutoff
+    );
+
 }
