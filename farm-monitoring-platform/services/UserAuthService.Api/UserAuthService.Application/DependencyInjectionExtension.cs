@@ -1,11 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Farm.BuildingBlocks.Application;
 
 using Microsoft.Extensions.DependencyInjection;
 
-using UserAuthService.Domain.Interfaces.Services;
 
 namespace UserAuthService.Application;
 

@@ -1,8 +1,8 @@
-﻿using ApiGatewayService.Application.Health;
+using ApiGatewayService.Application.Health;
 
 using Farm.BuildingBlocks.Web;
 
-using MediatR;
+using Farm.BuildingBlocks.Application;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,11 +13,11 @@ namespace ApiGatewayService.Api.Controllers
     [Route("api/v1/gateway")]
     public class GatewayController : ControllerBase
     {
-        private readonly ISender _mediator;
+        private readonly IRequestExecutor _executor;
 
-        public GatewayController(ISender mediator)
+        public GatewayController(IRequestExecutor executor)
         {
-            _mediator = mediator;
+            _executor = executor;
         }
 
         #region Queries
@@ -28,7 +28,7 @@ namespace ApiGatewayService.Api.Controllers
         [Authorize(Policy = "authenticated")]
         public async Task<IActionResult> GetServicesHealthAsync(CancellationToken ct)
         {
-            var result = await _mediator.Send(new GetServicesHealthQuery(), ct);
+            var result = await _executor.Execute(new GetServicesHealthQuery(), ct);
             return result.ToActionResult();
         }
         #endregion

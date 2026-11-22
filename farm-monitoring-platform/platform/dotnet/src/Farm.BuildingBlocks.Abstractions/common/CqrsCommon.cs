@@ -1,10 +1,9 @@
-﻿using MediatR;
 
 namespace Farm.BuildingBlocks.Abstractions;
 
 public interface ICommand { }// marker
-public interface ICommand<TResponse> : IRequest<Result<TResponse>>, ICommand { }
-public interface IQuery<TResponse> : IRequest<Result<TResponse>> { }
+public interface ICommand<TResponse> : ICommand { }
+public interface IQuery<TResponse>  { }
 
 public interface IUnitOfWork
 {

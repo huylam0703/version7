@@ -1,6 +1,6 @@
-﻿using Farm.BuildingBlocks.Abstractions;
+using Farm.BuildingBlocks.Abstractions;
 
-using MediatR;
+using Farm.BuildingBlocks.Application;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -44,15 +44,15 @@ namespace UserAuthService.Api.Controllers
         /// <summary>
         /// 
         /// </summary>
-        private readonly ISender _mediator;
+        private readonly IRequestExecutor _executor;
 
         /// <summary>
         /// 
         /// </summary>
         /// <param name="mediator"></param>
-        public TokenController(ISender mediator)
+        public TokenController(IRequestExecutor executor)
         {
-            _mediator = mediator;
+            _executor = executor;
         }
 
         #region Commands
@@ -67,7 +67,7 @@ namespace UserAuthService.Api.Controllers
         [Consumes("application/x-www-form-urlencoded")]
         public async Task<IActionResult> TokenAsync([FromForm] TokenRequest request, CancellationToken ct)
         {
-            var result = await _mediator.Send(new IssueServiceTokenCommand
+            var result = await _executor.Execute(new IssueServiceTokenCommand
             {
                 GrantType = request.GrantType,
                 ClientId = request.ClientId,

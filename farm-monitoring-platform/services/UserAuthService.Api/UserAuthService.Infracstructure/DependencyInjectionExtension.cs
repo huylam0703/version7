@@ -1,8 +1,10 @@
-﻿using System;
+using FluentValidation;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
 using Farm.BuildingBlocks.Abstractions;
+using Farm.BuildingBlocks.Application;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,6 +45,8 @@ public static class DependencyInjectionExtension
         services.AddScoped<IUnitOfWork, NoOpUnitOfWork>();
 
 
+        services.AddRequestHandlers(typeof(DependencyInjectionExtension).Assembly);
+        services.AddValidatorsFromAssembly(typeof(DependencyInjectionExtension).Assembly);
         return services;
     }
 
