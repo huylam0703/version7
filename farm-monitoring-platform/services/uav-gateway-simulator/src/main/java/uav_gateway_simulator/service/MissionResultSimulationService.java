@@ -5,13 +5,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.MissionClient;
+import uav_gateway_simulator.dto.response.MissionProgressDetailResponse;
 import uav_gateway_simulator.dto.response.MissionResultResponse;
 import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
 import uav_gateway_simulator.dto.request.MissionResultRequest;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -49,18 +53,85 @@ public class MissionResultSimulationService {
             );
         }
 
-        Instant collectedAt = Instant.now();
+
+        // Đọc Progress đã được Mission Service xác nhận.
+        // Sử dụng đúng tên method hiện có trong MissionClient.
+        MissionProgressDetailResponse progress =
+                missionClient.getMissionProgress(missionId);
+
+        if (progress == null
+                || !missionId.equals(progress.missionId())
+                || !executionId.equals(progress.executionId())) {
+            throw new IllegalStateException(
+                    "Invalid Mission Progress Detail"
+            );
+        }
+
+        // Chỉ tổng hợp Results khi toàn bộ Waypoint
+        // và Node đã được xử lý.
+        if (progress.reachedWaypoints() != progress.totalWaypoints()
+                || progress.processedNodes() != progress.totalNodes()) {
+            throw new IllegalStateException(
+                    "Mission Progress is not fully confirmed"
+            );
+        }
+
+        if (progress.nodes() == null) {
+            throw new IllegalStateException(
+                    "Mission Progress nodes must not be null"
+            );
+        }
+
+        Map<UUID, MissionProgressDetailResponse.NodeProgress> nodeMap =
+                progress.nodes().stream()
+                        .collect(Collectors.toMap(
+                                MissionProgressDetailResponse.NodeProgress::nodeId,
+                                Function.identity()
+                        ));
+
+        if (nodeMap.size() != nodeIds.size()
+                || !nodeMap.keySet().containsAll(nodeIds)) {
+            throw new IllegalStateException(
+                    "Mission Results nodes do not match Mission Progress"
+            );
+        }
 
         List<MissionNodeResultRequest> results = nodeIds.stream()
-                .map(nodeId -> new MissionNodeResultRequest(
-                        nodeId,
-                        "SUCCESS",
-                        10,
-                        1,
-                        collectedAt,
-                        null,
-                        null
-                ))
+                .map(nodeId -> {
+                    MissionProgressDetailResponse.NodeProgress node =
+                            nodeMap.get(nodeId);
+
+                    if (!"SUCCESS".equals(node.result())
+                            && !"FAILED".equals(node.result())) {
+                        throw new IllegalStateException(
+                                "Invalid node result: " + nodeId
+                        );
+                    }
+
+                    if ("SUCCESS".equals(node.result())
+                            && node.recordsCount() <= 0) {
+                        throw new IllegalStateException(
+                                "SUCCESS node must have recordsCount > 0"
+                        );
+                    }
+
+                    if ("FAILED".equals(node.result())
+                            && node.recordsCount() != 0) {
+                        throw new IllegalStateException(
+                                "FAILED node must have recordsCount = 0"
+                        );
+                    }
+
+                    return new MissionNodeResultRequest(
+                            node.nodeId(),
+                            node.result(),
+                            node.recordsCount(),
+                            node.attempts() == null ? 0 : node.attempts(),
+                            node.collectedAt(),
+                            null,
+                            null
+                    );
+                })
                 .toList();
 
         MissionResultRequest request = new MissionResultRequest(
@@ -68,6 +139,13 @@ public class MissionResultSimulationService {
                 results,
                 true
         );
+        log.info(
+                "FINAL RESULTS PAYLOAD: missionId={}, executionId={}, nodes={}",
+                missionId,
+                executionId,
+                results
+        );
+
 
         MissionResultPayloadStore.PendingResult pending =
                 payloadStore.saveIfAbsent(missionId, request);

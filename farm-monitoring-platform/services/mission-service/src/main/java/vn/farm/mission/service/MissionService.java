@@ -67,6 +67,38 @@ public class MissionService {
                 throw BusinessException.invalid("INVALID_ALTITUDE","altitudeM tối đa 2 chữ số thập phân");
             }
         }
+        Set<UUID> missionNodeIds = new HashSet<>(request.getNodeIds());
+        Set<UUID> assignedNodeIds = new HashSet<>();
+
+        for (WaypointRequest waypoint : request.getWaypoints()) {
+            List<UUID> nodeIds = waypoint.getNodeIds() == null
+                    ? List.of()
+                    : waypoint.getNodeIds();
+
+            for (UUID nodeId : nodeIds) {
+                if (!missionNodeIds.contains(nodeId)) {
+                    throw BusinessException.invalid(
+                            "NODE_NOT_IN_MISSION",
+                            "Node được phân công không thuộc Mission"
+                    );
+                }
+
+                if (!assignedNodeIds.add(nodeId)) {
+                    throw BusinessException.invalid(
+                            "DUPLICATE_NODE_ASSIGNMENT",
+                            "Một Node không được phân công nhiều Waypoint"
+                    );
+                }
+            }
+        }
+
+        if (!assignedNodeIds.equals(missionNodeIds)) {
+            throw BusinessException.invalid(
+                    "UNASSIGNED_MISSION_NODE",
+                    "Tất cả Sensor Node của Mission phải được phân công Waypoint"
+            );
+        }
+
         references.validate(request);
         Mission mission = missionMapper.toMission(request);
         mission.setCreatedBy(currentUser.id());
@@ -75,21 +107,40 @@ public class MissionService {
         mission = missionRepository.save(mission);
 
         List<Waypoint> saveWaypoints = new ArrayList<>();
-        for (WaypointRequest w : request.getWaypoints()){
+        Map<UUID, List<UUID>> waypointNodeMap = new HashMap<>();
+
+        for (WaypointRequest w : request.getWaypoints()) {
             Waypoint wp = new Waypoint();
             wp.setMission(mission);
             wp.setSeq(w.getSeq().shortValue());
             wp.setLat(w.getLat());
             wp.setLng(w.getLng());
-            wp.setAltM(w.getAltitudeM() == null ? BigDecimal.ZERO : w.getAltitudeM());
-            saveWaypoints.add(waypointRepository.save(wp));
-        }
+            wp.setAltM(
+                    w.getAltitudeM() == null
+                            ? BigDecimal.ZERO
+                            : w.getAltitudeM()
+            );
 
-        for (UUID nodeId : request.getNodeIds()){
-            MissionNode node = new MissionNode();
-            node.setMission(mission);
-            node.setNodeId(nodeId);
-            missionNodeRepository.save(node);
+            Waypoint savedWaypoint = waypointRepository.save(wp);
+            saveWaypoints.add(savedWaypoint);
+
+            List<UUID> assignedNodes = w.getNodeIds() == null
+                    ? List.of()
+                    : w.getNodeIds();
+
+            waypointNodeMap.put(
+                    savedWaypoint.getWaypointId(),
+                    List.copyOf(assignedNodes)
+            );
+
+            for (UUID nodeId : assignedNodes) {
+                MissionNode node = new MissionNode();
+                node.setMission(mission);
+                node.setNodeId(nodeId);
+                node.setWaypoint(savedWaypoint);
+
+                missionNodeRepository.save(node);
+            }
         }
 
         createMissionStatusLog(
@@ -102,13 +153,16 @@ public class MissionService {
         );
 
         List<WaypointResponse> wpResponse = saveWaypoints.stream()
-                .map(waypoint -> new WaypointResponse(waypoint.getWaypointId(),
+                .sorted(Comparator.comparingInt(Waypoint::getSeq))
+                .map(waypoint -> new WaypointResponse(
+                        waypoint.getWaypointId(),
                         waypoint.getSeq(),
                         waypoint.getLat(),
                         waypoint.getLng(),
                         waypoint.getAltM(),
-                        waypoint.getStatus()
-                        ))
+                        waypoint.getStatus(),
+                        waypointNodeMap.get(waypoint.getWaypointId())
+                ))
                 .toList();
 
 
@@ -179,9 +233,32 @@ public class MissionService {
         MissionDetailResponse response =
                 missionMapper.toMissionDetailResponse(mission);
 
+        Map<UUID, List<UUID>> waypointNodeMap =
+                missionNodes.stream()
+                        .filter(node -> node.getWaypoint() != null)
+                        .collect(Collectors.groupingBy(
+                                node -> node.getWaypoint().getWaypointId(),
+                                Collectors.mapping(
+                                        MissionNode::getNodeId,
+                                        Collectors.toList()
+                                )
+                        ));
+
         response.setWaypoints(
                 waypoints.stream()
-                        .map(missionMapper::toWaypointResponse)
+                        .map(waypoint -> {
+                            WaypointResponse wp =
+                                    missionMapper.toWaypointResponse(waypoint);
+
+                            wp.setNodeIds(
+                                    waypointNodeMap.getOrDefault(
+                                            waypoint.getWaypointId(),
+                                            List.of()
+                                    )
+                            );
+
+                            return wp;
+                        })
                         .toList()
         );
 

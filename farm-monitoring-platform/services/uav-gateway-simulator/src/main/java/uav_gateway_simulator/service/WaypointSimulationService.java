@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import uav_gateway_simulator.client.MissionClient;
+import uav_gateway_simulator.dto.request.MissionNodeProgressRequest;
 import uav_gateway_simulator.dto.request.MissionProgressRequest;
 import uav_gateway_simulator.dto.response.MissionProgressResponse;
 import uav_gateway_simulator.dto.MissionResumePlan;
@@ -24,6 +25,7 @@ public class WaypointSimulationService {
     private final MissionClient missionClient;
     private final RecoveryLeaseRegistry leaseRegistry;
     private final MissionCancellationService cancellationService;
+    private final WaypointSensorCollectionService sensorCollectionService;
 
     @Value("${simulator.flight.waypoint-delay-ms:3000}")
     private long waypointDelayMs;
@@ -84,13 +86,23 @@ public class WaypointSimulationService {
                 );
             }
 
+            List<MissionNodeProgressRequest> nodeResults =
+                    sensorCollectionService.collect(
+                            missionId,
+                            executionId,
+                            waypoint
+                    );
+
+            cancellationService.checkNotCancelled(missionId);
+            leaseRegistry.getForWrite(executionId);
+
             MissionProgressRequest request =
                     new MissionProgressRequest(
                             executionId,
                             progressSequence,
                             (short) waypoint.seq(),
                             Instant.now(),
-                            List.of()
+                            nodeResults
                     );
 
             MissionProgressResponse response =
@@ -229,13 +241,23 @@ public class WaypointSimulationService {
             // Recovery phải còn quyền sở hữu execution.
             leaseRegistry.getForWrite(executionId);
 
+            List<MissionNodeProgressRequest> nodeResults =
+                    sensorCollectionService.collect(
+                            missionId,
+                            executionId,
+                            waypoint
+                    );
+
+            cancellationService.checkNotCancelled(missionId);
+            leaseRegistry.getForWrite(executionId);
+
             MissionProgressRequest request =
                     new MissionProgressRequest(
                             executionId,
                             progressSequence,
                             (short) waypoint.seq(),
                             Instant.now(),
-                            List.of()
+                            nodeResults
                     );
 
             MissionProgressResponse response =
