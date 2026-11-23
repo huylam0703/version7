@@ -2,8 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NotificationService.Domain\NotificationService.Domain.csproj" />
-    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Abstractions\Farm.BuildingBlocks.Abstractions.csproj" />
-    <ProjectReference Include="..\..\..\platform\dotnet\src\Farm.BuildingBlocks.Infrastructure\Farm.BuildingBlocks.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
