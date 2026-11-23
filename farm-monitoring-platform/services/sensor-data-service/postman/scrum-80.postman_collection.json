@@ -1,0 +1,733 @@
+{
+  "info": {
+    "name": "SCRUM-80 Sensor Data REST API",
+    "description": "Writes uniquely named test readingJson. Run against a disposable Sensor Data database with migrations 03 and 04 applied.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8084"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Write a single reading",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/readings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nodeId\": \"{{nodeId}}\",\n  \"sensorType\": \"AIR_TEMP\",\n  \"sensorValue\": 20,\n  \"unit\": \"°C\",\n  \"valueKind\": \"PHYSICAL\",\n  \"measuredAt\": \"2026-11-24T02:10:00Z\",\n  \"collectedAt\": \"2026-11-24T02:10:00Z\",\n  \"latitude\": 10.03,\n  \"longitude\": 105.78,\n  \"farmId\": \"{{farmId}}\",\n  \"zoneId\": \"{{zoneId}}\",\n  \"missionId\": \"{{missionId}}\",\n  \"executionId\": \"{{executionId}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const guid = () => pm.variables.replaceIn('{{$guid}}');",
+              "pm.collectionVariables.set('nodeId', 'scrum80-' + guid());",
+              "pm.collectionVariables.set('otherNodeId', 'scrum80-' + guid());",
+              "['farmId', 'zoneId', 'missionId', 'executionId', 'otherZoneId', 'otherExecutionId'].forEach(key => pm.collectionVariables.set(key, guid()));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.status).to.equal('VALID');",
+              "    pm.expect(readingJson.id).to.be.a('number');",
+              "    pm.collectionVariables.set('readingId', readingJson.id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Retry using a legacy type alias",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/readings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nodeId\": \"{{nodeId}}\",\n  \"sensorType\": \"TEMPERATURE\",\n  \"sensorValue\": 20,\n  \"unit\": \"°C\",\n  \"valueKind\": \"PHYSICAL\",\n  \"measuredAt\": \"2026-11-24T02:10:00Z\",\n  \"collectedAt\": \"2026-11-24T02:10:00Z\",\n  \"latitude\": 10.03,\n  \"longitude\": 105.78,\n  \"farmId\": \"{{farmId}}\",\n  \"zoneId\": \"{{zoneId}}\",\n  \"missionId\": \"{{missionId}}\",\n  \"executionId\": \"{{executionId}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.status).to.equal('DUPLICATE');",
+              "    pm.expect(readingJson).not.to.have.property('id');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Write a batch with all sensor types",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/sync-batches",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"readings\": [\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"AIR_TEMP\",\n      \"sensorValue\": 26,\n      \"unit\": \"°C\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T02:20:00Z\",\n      \"collectedAt\": \"2026-11-24T02:20:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"AIR_TEMP\",\n      \"sensorValue\": 32,\n      \"unit\": \"°C\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T03:10:00Z\",\n      \"collectedAt\": \"2026-11-24T03:10:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"AIR_HUMIDITY\",\n      \"sensorValue\": 55,\n      \"unit\": \"%\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T02:20:00Z\",\n      \"collectedAt\": \"2026-11-24T02:20:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"LIGHT\",\n      \"sensorValue\": 400,\n      \"unit\": \"lux\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T02:20:00Z\",\n      \"collectedAt\": \"2026-11-24T02:20:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"SOIL_MOISTURE\",\n      \"sensorValue\": 65,\n      \"unit\": \"%\",\n      \"valueKind\": \"CONVERTED\",\n      \"measuredAt\": \"2026-11-24T02:20:00Z\",\n      \"collectedAt\": \"2026-11-24T02:20:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"WATER_LEVEL\",\n      \"sensorValue\": 25,\n      \"unit\": \"cm\",\n      \"valueKind\": \"CONVERTED\",\n      \"measuredAt\": \"2026-11-24T02:20:00Z\",\n      \"collectedAt\": \"2026-11-24T02:20:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"PH\",\n      \"sensorValue\": 7,\n      \"unit\": \"pH\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T02:20:00Z\",\n      \"collectedAt\": \"2026-11-24T02:20:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"WATER_LEVEL\",\n      \"sensorValue\": 123,\n      \"unit\": \"ADC_COUNT\",\n      \"valueKind\": \"ADC_RAW\",\n      \"measuredAt\": \"2026-11-24T02:25:00Z\",\n      \"collectedAt\": \"2026-11-24T02:25:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\",\n      \"adcResolutionBits\": 12\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"SOIL_MOISTURE\",\n      \"sensorValue\": 56,\n      \"unit\": \"lux\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T02:26:00Z\",\n      \"collectedAt\": \"2026-11-24T02:26:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{otherNodeId}}\",\n      \"sensorType\": \"AIR_TEMP\",\n      \"sensorValue\": 28,\n      \"unit\": \"°C\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T02:20:00Z\",\n      \"collectedAt\": \"2026-11-24T02:20:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{otherZoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{otherExecutionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"AIR_TEMP\",\n      \"sensorValue\": 20,\n      \"unit\": \"°C\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T02:10:00Z\",\n      \"collectedAt\": \"2026-11-24T02:10:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect([readingJson.total, readingJson.validCount, readingJson.invalidCount, readingJson.duplicateCount]).to.eql([11, 9, 1, 1]);",
+              "    pm.expect(readingJson.items[8]).to.include({index: 8, status: 'INVALID'});",
+              "    pm.expect(readingJson.items[8].id).to.be.a('number');",
+              "    pm.expect(readingJson.items[10]).to.deep.equal({index: 10, status: 'DUPLICATE'});",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Reject malformed batch before any insert",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/readings/batch",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"readings\": [\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"LIGHT\",\n      \"sensorValue\": 45,\n      \"unit\": \"lux\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T05:20:00Z\",\n      \"collectedAt\": \"2026-11-24T05:20:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    },\n    {\n      \"nodeId\": \"{{nodeId}}\",\n      \"sensorType\": \"LIGHT\",\n      \"unit\": \"lux\",\n      \"valueKind\": \"PHYSICAL\",\n      \"measuredAt\": \"2026-11-24T05:21:00Z\",\n      \"collectedAt\": \"2026-11-24T05:21:00Z\",\n      \"latitude\": 10.03,\n      \"longitude\": 105.78,\n      \"farmId\": \"{{farmId}}\",\n      \"zoneId\": \"{{zoneId}}\",\n      \"missionId\": \"{{missionId}}\",\n      \"executionId\": \"{{executionId}}\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+              "    pm.expect(readingJson.code).to.equal('INVALID_REQUEST');",
+              "    pm.expect(readingJson.errors.some(error => error.field === 'readings[1].sensorValue')).to.equal(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Page 1 sorted by reading value",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?nodeId={{nodeId}}&page=1&pageSize=2&sortBy=sensorValue&sortDirection=asc"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect([readingJson.page, readingJson.pageSize, readingJson.total, readingJson.items.length]).to.eql([1, 2, 10, 2]);",
+              "    pm.expect(readingJson.items.map(item => item.sensorValue)).to.eql([7, 20]);",
+              "    pm.collectionVariables.set('firstPageIds', JSON.stringify(readingJson.items.map(item => item.id)));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Page 2 starts at the correct offset",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?nodeId={{nodeId}}&page=2&pageSize=2&sortBy=sensorValue&sortDirection=asc"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect([readingJson.page, readingJson.pageSize, readingJson.total, readingJson.items.length]).to.eql([2, 2, 10, 2]);",
+              "    const previous = JSON.parse(pm.collectionVariables.get('firstPageIds'));",
+              "    pm.expect(readingJson.items.every(item => !previous.includes(item.id))).to.equal(true);",
+              "    pm.expect(readingJson.items.map(item => item.sensorValue)).to.eql([25, 26]);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Read by ID with UTC and context",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/{{readingId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.sensorType).to.equal('AIR_TEMP');",
+              "    pm.expect(readingJson.sensorValue).to.equal(20);",
+              "    pm.expect(readingJson.measuredAt).to.equal('2026-11-24T02:10:00Z');",
+              "    pm.expect(readingJson.receivedAt).to.match(/Z$/);",
+              "    ['farmId', 'zoneId', 'missionId', 'executionId'].forEach(key => pm.expect(readingJson[key]).to.equal(pm.collectionVariables.get(key)));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Missing reading returns Problem Details",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/9223372036854775807"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 404', function () { pm.response.to.have.status(404); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+              "    pm.expect(readingJson.code).to.equal('READING_NOT_FOUND');",
+              "    pm.expect(readingJson.traceId).to.match(/^[0-9a-f]{32}$/);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Node history and exclusive end time",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/nodes/{{nodeId}}?sensorType=air_temp&from=2026-11-24T02:10:00Z&to=2026-11-24T03:10:00Z"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.total).to.equal(2);",
+              "    pm.expect(readingJson.items.map(item => item.sensorValue)).to.eql([26, 20]);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filter by farmId",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?farmId={{farmId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.total).to.equal(11);",
+              "    pm.expect(readingJson.items.every(item => item.farmId === pm.collectionVariables.get('farmId'))).to.equal(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filter by zoneId",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?zoneId={{zoneId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.total).to.equal(10);",
+              "    pm.expect(readingJson.items.every(item => item.zoneId === pm.collectionVariables.get('zoneId'))).to.equal(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filter by missionId",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?missionId={{missionId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.total).to.equal(11);",
+              "    pm.expect(readingJson.items.every(item => item.missionId === pm.collectionVariables.get('missionId'))).to.equal(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filter by executionId",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?executionId={{executionId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.total).to.equal(10);",
+              "    pm.expect(readingJson.items.every(item => item.executionId === pm.collectionVariables.get('executionId'))).to.equal(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Combine context filters with AND",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?farmId={{farmId}}&nodeId={{nodeId}}&zoneId={{otherZoneId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.total).to.equal(0);",
+              "    pm.expect(readingJson.items).to.eql([]);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Latest grouped by node and type",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/latest?nodeId={{nodeId}}&validationStatus=VALID"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.total).to.equal(6);",
+              "    pm.expect(readingJson.items.find(item => item.sensorType === 'AIR_TEMP').sensorValue).to.equal(32);",
+              "    pm.expect(readingJson.items.find(item => item.sensorType === 'WATER_LEVEL').valueKind).to.equal('ADC_RAW');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Statistics for a canonical sensor type and its alias",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/statistics?nodeId={{nodeId}}&sensorType=TEMPERATURE"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.length).to.equal(1);",
+              "    pm.expect(readingJson[0]).to.include({sensorType: 'AIR_TEMP', min: 20, max: 32, avg: 26, count: 3});",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Statistics keep ADC and centimetres separate",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/statistics?nodeId={{nodeId}}&sensorType=WATER_LEVEL"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.length).to.equal(2);",
+              "    pm.expect(readingJson.find(item => item.valueKind === 'ADC_RAW')).to.include({unit: 'ADC_COUNT', adcResolutionBits: 12, avg: 123, count: 1});",
+              "    pm.expect(readingJson.find(item => item.valueKind === 'CONVERTED')).to.include({unit: 'cm', avg: 25, count: 1});",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Time series aggregated into UTC hours",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/time-series?nodeId={{nodeId}}&sensorType=AIR_TEMP&from=2026-11-24T02:00:00Z&to=2026-11-24T04:00:00Z&interval=HOUR"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.map(item => [item.bucketStart, item.avg, item.count])).to.eql([['2026-11-24T02:00:00Z', 23, 2], ['2026-11-24T03:00:00Z', 32, 1]]);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Only invalid records",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/invalid?nodeId={{nodeId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.total).to.equal(1);",
+              "    pm.expect(readingJson.items[0]).to.include({sensorType: 'SOIL_MOISTURE', validationStatus: 'INVALID'});",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Quality counts and invalid percent",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings/quality?nodeId={{nodeId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson).to.include({total: 10, validCount: 9, invalidCount: 1, missingMetadataCount: 0, invalidPercent: 10});",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject an oversized page",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?pageSize=101"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.code).to.equal('INVALID_REQUEST');",
+              "    pm.expect(readingJson.errors[0].field).to.equal('pageSize');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject an unknown sort field",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?sortBy=unknown"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.code).to.equal('INVALID_REQUEST');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject reversed query timestamps",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/readings?from=2026-11-24T04:00:00Z&to=2026-11-24T02:00:00Z"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.code).to.equal('INVALID_REQUEST');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Legacy ESP32 single ingestion",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/sensor-readings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nodeId\": \"{{nodeId}}-legacy\",\n  \"sensorType\": \"PH\",\n  \"sensorValue\": 7,\n  \"measuredAt\": \"2026-11-24T06:00:00\",\n  \"collectedAt\": \"2026-11-24T06:01:00\",\n  \"latitude\": 10.03,\n  \"longitude\": 105.78\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.status).to.equal('VALID');",
+              "    pm.expect(readingJson.id).to.be.a('number');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Legacy ESP32 history stays a JSON array",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/sensor-readings?limit=1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    pm.expect(readingJson.length).to.equal(1);",
+              "    pm.expect(readingJson[0]).to.have.property('sensorValue');",
+              "    pm.expect(readingJson[0]).not.to.have.property('context');",
+              "    pm.expect(readingJson[0]).not.to.have.property('farmId');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "OpenAPI describes the v1 contract",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/v3/api-docs"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const readingJson = pm.response.json();",
+              "pm.test('Response matches contract', function () {",
+              "    ['/api/v1/readings', '/api/v1/readings/{id}', '/api/v1/readings/latest', '/api/v1/readings/time-series', '/api/v1/sync-batches', '/api/sensor-readings'].forEach(path => pm.expect(readingJson.paths).to.have.property(path));",
+              "    const list = readingJson.paths['/api/v1/readings'].get;",
+              "    pm.expect(list.parameters.map(parameter => parameter.name)).to.include.members(['farmId', 'executionId', 'from', 'page', 'sortBy']);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
