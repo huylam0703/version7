@@ -59,6 +59,9 @@ public class SensorReading {
     @Column(name = "validation_status", nullable = false, length = 20)
     private String validationStatus = "VALID";
 
+    @Embedded
+    private ReadingContext context;
+
     public SensorReading() {
     }
 
@@ -156,5 +159,9 @@ public class SensorReading {
 
     public void setValidationStatus(String validationStatus) {
         this.validationStatus = validationStatus;
+    }
+
+    public void setContext(ReadingContext context) {
+        this.context = context;
     }
 }
