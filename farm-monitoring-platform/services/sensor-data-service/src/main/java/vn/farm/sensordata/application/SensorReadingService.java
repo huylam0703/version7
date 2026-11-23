@@ -9,7 +9,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import vn.farm.sensordata.api.dto.ReadingResults.*;
+import vn.farm.sensordata.api.dto.ReadingSubmission;
 import vn.farm.sensordata.api.dto.SensorReadingRequest;
+import vn.farm.sensordata.domain.ReadingContext;
 import vn.farm.sensordata.domain.SensorReading;
 import vn.farm.sensordata.domain.SensorType;
 import vn.farm.sensordata.persistence.SensorReadingRepository;
@@ -17,9 +20,10 @@ import vn.farm.sensordata.persistence.SensorReadingRepository;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 @Service
 public class SensorReadingService {
@@ -33,22 +37,45 @@ public class SensorReadingService {
         this.repository = repository;
     }
 
-    public Map<String, Object> saveReading(SensorReadingRequest request) {
+    public Written saveReading(SensorReadingRequest request) {
+        return persist(prepare(request, null));
+    }
+
+    public Written saveReading(ReadingSubmission submission) {
+        return persist(prepare(submission.reading(), submission.context()));
+    }
+
+    public Batch saveBatch(List<ReadingSubmission> submissions) {
+        List<PreparedReading> prepared = submissions.stream()
+                .map(submission -> prepare(submission.reading(), submission.context()))
+                .toList();
+        var items = new ArrayList<BatchItem>(prepared.size());
+        var counts = new EnumMap<WriteStatus, Integer>(WriteStatus.class);
+        for (int index = 0; index < prepared.size(); index++) {
+            Written written = persist(prepared.get(index));
+            items.add(new BatchItem(index, written.status(), written.id()));
+            counts.merge(written.status(), 1, Integer::sum);
+        }
+        return new Batch(prepared.size(), counts.getOrDefault(WriteStatus.VALID, 0),
+                counts.getOrDefault(WriteStatus.INVALID, 0), counts.getOrDefault(WriteStatus.DUPLICATE, 0), items);
+    }
+
+    private PreparedReading prepare(SensorReadingRequest request, ReadingContext context) {
+        if (!Double.isFinite(request.sensorValue())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sensorValue must be finite");
+        }
+
         LocalDateTime measuredAt = toSqlTimestamp(request.measuredAt());
         LocalDateTime collectedAt = toSqlTimestamp(request.collectedAt());
         String inputCode = request.sensorType().strip().toUpperCase(Locale.ROOT);
         SensorType type = SensorType.findByCode(inputCode).orElse(null);
         List<String> matchingCodes = type == null ? List.of(inputCode) : type.codes();
-        if (repository.existsReading(request.nodeId(), matchingCodes, measuredAt)) {
-            return duplicateResult();
-        }
-
         String unit = request.unit() == null ? null : request.unit().strip();
         Integer adcResolutionBits = request.adcResolutionBits() == null
                 ? null : request.adcResolutionBits().intValueExact();
         boolean valid = type != null && type.isValid(inputCode, request.sensorValue(), unit,
                 request.valueKind(), adcResolutionBits);
-        String validationStatus = valid ? "VALID" : "INVALID";
+        WriteStatus status = valid ? WriteStatus.VALID : WriteStatus.INVALID;
         SensorReading reading = new SensorReading();
         reading.setNodeId(request.nodeId());
         reading.setSensorType(type == null ? request.sensorType() : type.name());
@@ -60,12 +87,20 @@ public class SensorReadingService {
         reading.setCollectedAt(collectedAt);
         reading.setLatitude(request.latitude());
         reading.setLongitude(request.longitude());
-        reading.setValidationStatus(validationStatus);
+        reading.setValidationStatus(status.name());
+        reading.setContext(context);
+        return new PreparedReading(reading, matchingCodes, status);
+    }
 
+    private Written persist(PreparedReading prepared) {
+        SensorReading reading = prepared.reading();
+        if (repository.existsReading(reading.getNodeId(), prepared.matchingCodes(), reading.getMeasuredAt())) {
+            return duplicateResult();
+        }
         try {
             // The repository transaction rolls back before we return a duplicate response.
             SensorReading saved = repository.saveAndFlush(reading);
-            return Map.of("status", validationStatus, "message", "Sensor reading saved", "id", saved.getId());
+            return new Written(prepared.status(), "Sensor reading saved", saved.getId());
         } catch (DataIntegrityViolationException error) {
             if (isDuplicateConstraint(error)) {
                 return duplicateResult();
@@ -106,7 +141,9 @@ public class SensorReadingService {
         return false;
     }
 
-    private static Map<String, Object> duplicateResult() {
-        return Map.of("status", "DUPLICATE", "message", "Sensor reading already exists");
+    private static Written duplicateResult() {
+        return new Written(WriteStatus.DUPLICATE, "Sensor reading already exists", null);
     }
+
+    private record PreparedReading(SensorReading reading, List<String> matchingCodes, WriteStatus status) {}
 }
