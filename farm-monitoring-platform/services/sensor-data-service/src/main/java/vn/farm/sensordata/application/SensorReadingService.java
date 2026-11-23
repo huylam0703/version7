@@ -1,21 +1,31 @@
 package vn.farm.sensordata.application;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import vn.farm.sensordata.api.dto.SensorReadingRequest;
 import vn.farm.sensordata.domain.SensorReading;
+import vn.farm.sensordata.domain.SensorType;
 import vn.farm.sensordata.persistence.SensorReadingRepository;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
 public class SensorReadingService {
+
+    private static final LocalDateTime LAST_ROUNDABLE_SQL_TIMESTAMP =
+            LocalDateTime.of(9999, 12, 31, 23, 59, 59, 999_499_999);
 
     private final SensorReadingRepository repository;
 
@@ -23,50 +33,45 @@ public class SensorReadingService {
         this.repository = repository;
     }
 
-    @Transactional
     public Map<String, Object> saveReading(SensorReadingRequest request) {
-
-        // 1. Kiểm tra dữ liệu trùng
-        boolean exists = repository.existsByNodeIdAndSensorTypeAndMeasuredAt(
-                request.nodeId(),
-                request.sensorType(),
-                request.measuredAt()
-        );
-
-        if (exists) {
-            return Map.of(
-                    "status", "DUPLICATE",
-                    "message", "Sensor reading already exists"
-            );
+        LocalDateTime measuredAt = toSqlTimestamp(request.measuredAt());
+        LocalDateTime collectedAt = toSqlTimestamp(request.collectedAt());
+        String inputCode = request.sensorType().strip().toUpperCase(Locale.ROOT);
+        SensorType type = SensorType.findByCode(inputCode).orElse(null);
+        List<String> matchingCodes = type == null ? List.of(inputCode) : type.codes();
+        if (repository.existsReading(request.nodeId(), matchingCodes, measuredAt)) {
+            return duplicateResult();
         }
 
-        // 2. Kiểm tra giá trị cảm biến
-        String validationStatus = validateSensorValue(
-                request.sensorType(),
-                request.sensorValue()
-        );
-
-        // 3. Chuyển DTO thành Entity
+        String unit = request.unit() == null ? null : request.unit().strip();
+        Integer adcResolutionBits = request.adcResolutionBits() == null
+                ? null : request.adcResolutionBits().intValueExact();
+        boolean valid = type != null && type.isValid(inputCode, request.sensorValue(), unit,
+                request.valueKind(), adcResolutionBits);
+        String validationStatus = valid ? "VALID" : "INVALID";
         SensorReading reading = new SensorReading();
-
         reading.setNodeId(request.nodeId());
-        reading.setSensorType(request.sensorType());
+        reading.setSensorType(type == null ? request.sensorType() : type.name());
         reading.setSensorValue(request.sensorValue());
-        reading.setMeasuredAt(request.measuredAt());
-        reading.setCollectedAt(request.collectedAt());
+        reading.setUnit(unit);
+        reading.setValueKind(request.valueKind());
+        reading.setAdcResolutionBits(adcResolutionBits);
+        reading.setMeasuredAt(measuredAt);
+        reading.setCollectedAt(collectedAt);
         reading.setLatitude(request.latitude());
         reading.setLongitude(request.longitude());
         reading.setValidationStatus(validationStatus);
 
-        // 4. Lưu vào SQL Server
-        SensorReading saved = repository.save(reading);
-
-        // 5. Trả kết quả
-        return Map.of(
-                "status", validationStatus,
-                "message", "Sensor reading saved",
-                "id", saved.getId()
-        );
+        try {
+            // The repository transaction rolls back before we return a duplicate response.
+            SensorReading saved = repository.saveAndFlush(reading);
+            return Map.of("status", validationStatus, "message", "Sensor reading saved", "id", saved.getId());
+        } catch (DataIntegrityViolationException error) {
+            if (isDuplicateConstraint(error)) {
+                return duplicateResult();
+            }
+            throw error;
+        }
     }
 
     @Transactional(readOnly = true)
@@ -82,33 +87,26 @@ public class SensorReadingService {
         ).getContent();
     }
 
-    private String validateSensorValue(String sensorType, Double value) {
-
-        if (value == null || !Double.isFinite(value)) {
-            return "INVALID";
+    private static LocalDateTime toSqlTimestamp(LocalDateTime timestamp) {
+        if (timestamp.getYear() < 1 || timestamp.isAfter(LAST_ROUNDABLE_SQL_TIMESTAMP)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Timestamp is outside the SQL Server range");
         }
+        return timestamp.plusNanos(500_000).truncatedTo(ChronoUnit.MILLIS);
+    }
 
-        if (sensorType == null) {
-            return "INVALID";
+    private static boolean isDuplicateConstraint(DataIntegrityViolationException error) {
+        Throwable cause = error.getMostSpecificCause();
+        if (cause instanceof SQLException sql && (sql.getErrorCode() == 2601 || sql.getErrorCode() == 2627)) {
+            for (Throwable nested = error.getCause(); nested != null; nested = nested.getCause()) {
+                if (nested instanceof ConstraintViolationException violation) {
+                    return SensorReading.UNIQUE_CONSTRAINT.equalsIgnoreCase(violation.getConstraintName());
+                }
+            }
         }
+        return false;
+    }
 
-        switch (sensorType.trim().toUpperCase()) {
-            case "TEMPERATURE":
-                // Giới hạn thử nghiệm, sẽ cấu hình theo loại cảm biến
-                return value >= -40 && value <= 85
-                        ? "VALID" : "INVALID";
-
-            case "HUMIDITY":
-            case "SOIL_MOISTURE":
-                return value >= 0 && value <= 100
-                        ? "VALID" : "INVALID";
-
-            case "PH":
-                return value >= 0 && value <= 14
-                        ? "VALID" : "INVALID";
-
-            default:
-                return "INVALID";
-        }
+    private static Map<String, Object> duplicateResult() {
+        return Map.of("status", "DUPLICATE", "message", "Sensor reading already exists");
     }
 }
