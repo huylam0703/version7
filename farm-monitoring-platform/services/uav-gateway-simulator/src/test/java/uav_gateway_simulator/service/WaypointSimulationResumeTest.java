@@ -3,6 +3,7 @@ package uav_gateway_simulator.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import uav_gateway_simulator.client.MissionClient;
@@ -33,6 +34,7 @@ class WaypointSimulationResumeTest {
     private UUID instanceId;
 
     private List<WaypointResponse> waypoints;
+    private WaypointSensorCollectionService sensorCollectionService;
 
     @BeforeEach
     void setUp() {
@@ -41,11 +43,13 @@ class WaypointSimulationResumeTest {
 
         MissionCancellationService cancellationService =
                 mock(MissionCancellationService.class);
+        sensorCollectionService = mock(WaypointSensorCollectionService.class);
 
         this.service = new WaypointSimulationService(
                 missionClient,
                 leaseRegistry,
-                cancellationService
+                cancellationService,
+                sensorCollectionService
         );
 
         ReflectionTestUtils.setField(
@@ -57,6 +61,7 @@ class WaypointSimulationResumeTest {
         missionId = UUID.randomUUID();
         executionId = UUID.randomUUID();
         instanceId = UUID.randomUUID();
+        UUID nodeId = UUID.randomUUID();
 
         waypoints = new ArrayList<>();
 
@@ -67,7 +72,8 @@ class WaypointSimulationResumeTest {
                     BigDecimal.valueOf(10.762622),
                     BigDecimal.valueOf(106.660172),
                     BigDecimal.valueOf(15.5),
-                    "PENDING"
+                    "PENDING",
+                    List.of(nodeId)
             ));
         }
     }

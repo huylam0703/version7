@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.request.MissionResultRequest;
+import uav_gateway_simulator.dto.response.MissionProgressDetailResponse;
 import uav_gateway_simulator.dto.response.MissionResultResponse;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +37,7 @@ class MissionResultSimulationServiceTest {
 
         RecoveryLeaseRegistry leaseRegistry =
                 new RecoveryLeaseRegistry();
+
         MissionCancellationService cancellationService =
                 mock(MissionCancellationService.class);
 
@@ -51,8 +54,38 @@ class MissionResultSimulationServiceTest {
         nodeId2 = UUID.randomUUID();
     }
 
+    private void mockCompletedProgress(List<UUID> nodeIds) {
+        List<MissionProgressDetailResponse.NodeProgress> nodes =
+                nodeIds.stream()
+                        .map(id -> new MissionProgressDetailResponse.NodeProgress(
+                                id,
+                                "SUCCESS",
+                                1,
+                                1,
+                                Instant.now()
+                        ))
+                        .toList();
+
+        when(missionClient.getMissionProgress(missionId))
+                .thenReturn(new MissionProgressDetailResponse(
+                        missionId,
+                        executionId,
+                        "RUNNING",
+                        "EXECUTING",
+                        1L,
+                        1,
+                        1,
+                        nodes.size(),
+                        nodes.size(),
+                        100.0,
+                        List.of(),
+                        nodes
+                ));
+    }
+
     @Test
     void shouldGenerateSuccessResultsForAllNodes() {
+        mockCompletedProgress(List.of(nodeId1, nodeId2));
 
         MissionResultResponse expectedResponse =
                 new MissionResultResponse(
@@ -80,9 +113,7 @@ class MissionResultSimulationServiceTest {
         assertEquals("COMPLETED", response.status());
 
         ArgumentCaptor<MissionResultRequest> captor =
-                ArgumentCaptor.forClass(
-                        MissionResultRequest.class
-                );
+                ArgumentCaptor.forClass(MissionResultRequest.class);
 
         verify(missionClient, times(1))
                 .sendResults(eq(missionId), captor.capture());
@@ -102,7 +133,7 @@ class MissionResultSimulationServiceTest {
 
         request.results().forEach(result -> {
             assertEquals("SUCCESS", result.result());
-            assertEquals(10, result.recordsCount());
+            assertEquals(1, result.recordsCount());
             assertEquals(1, result.attempts());
             assertNotNull(result.collectedAt());
             assertNull(result.errorCode());
@@ -112,7 +143,6 @@ class MissionResultSimulationServiceTest {
 
     @Test
     void shouldRejectEmptyNodeList() {
-
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.simulateResults(
@@ -127,7 +157,6 @@ class MissionResultSimulationServiceTest {
 
     @Test
     void shouldRejectNullNodeList() {
-
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.simulateResults(
@@ -142,7 +171,6 @@ class MissionResultSimulationServiceTest {
 
     @Test
     void shouldRejectDuplicateNodeIds() {
-
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.simulateResults(
@@ -157,7 +185,6 @@ class MissionResultSimulationServiceTest {
 
     @Test
     void shouldRejectNullNodeId() {
-
         List<UUID> nodeIds = new ArrayList<>();
         nodeIds.add(nodeId1);
         nodeIds.add(null);
@@ -176,7 +203,6 @@ class MissionResultSimulationServiceTest {
 
     @Test
     void shouldRejectNullExecutionId() {
-
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.simulateResults(
@@ -191,6 +217,7 @@ class MissionResultSimulationServiceTest {
 
     @Test
     void shouldPropagateMissionClientFailure() {
+        mockCompletedProgress(List.of(nodeId1));
 
         when(missionClient.sendResults(
                 eq(missionId),

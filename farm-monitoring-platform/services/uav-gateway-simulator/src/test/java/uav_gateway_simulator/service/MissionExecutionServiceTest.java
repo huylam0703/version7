@@ -91,7 +91,8 @@ class MissionExecutionServiceTest {
                 new BigDecimal("10.123"),
                 new BigDecimal("106.123"),
                 new BigDecimal("20"),
-                "PENDING"
+                "PENDING",
+                List.of(nodeId)
         );
 
         mission = new MissionDetailResponse(

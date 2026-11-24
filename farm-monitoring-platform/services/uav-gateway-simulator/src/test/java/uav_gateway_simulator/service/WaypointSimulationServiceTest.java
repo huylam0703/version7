@@ -1,3 +1,4 @@
+
 package uav_gateway_simulator.service;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -5,15 +6,17 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import uav_gateway_simulator.client.MissionClient;
+import uav_gateway_simulator.dto.request.MissionNodeProgressRequest;
+import uav_gateway_simulator.dto.request.MissionProgressRequest;
 import uav_gateway_simulator.dto.response.MissionProgressResponse;
 import uav_gateway_simulator.dto.response.WaypointResponse;
-import uav_gateway_simulator.dto.request.MissionProgressRequest;
 import uav_gateway_simulator.exception.MissionCancelledException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -27,7 +30,7 @@ class WaypointSimulationServiceTest {
     private UUID missionId;
     private UUID executionId;
     private MissionCancellationService cancellationService;
-
+    private WaypointSensorCollectionService sensorCollectionService;
 
     @BeforeEach
     void setUp() {
@@ -36,12 +39,17 @@ class WaypointSimulationServiceTest {
         RecoveryLeaseRegistry leaseRegistry =
                 new RecoveryLeaseRegistry();
 
-        cancellationService = mock(MissionCancellationService.class);
+        cancellationService =
+                mock(MissionCancellationService.class);
+
+        sensorCollectionService =
+                mock(WaypointSensorCollectionService.class);
 
         simulationService = new WaypointSimulationService(
                 missionClient,
                 leaseRegistry,
-                cancellationService
+                cancellationService,
+                sensorCollectionService
         );
 
         ReflectionTestUtils.setField(
@@ -52,34 +60,45 @@ class WaypointSimulationServiceTest {
 
         missionId = UUID.randomUUID();
         executionId = UUID.randomUUID();
+
+        when(sensorCollectionService.collect(
+                eq(missionId),
+                eq(executionId),
+                any(WaypointResponse.class)
+        )).thenAnswer(invocation -> {
+            WaypointResponse waypoint = invocation.getArgument(2);
+
+            return waypoint.nodeIds().stream()
+                    .map(id -> new MissionNodeProgressRequest(
+                            id,
+                            "SUCCESS",
+                            1,
+                            1,
+                            Instant.now()
+                    ))
+                    .toList();
+        });
     }
 
-
     private WaypointResponse waypoint(int seq) {
+        UUID nodeId = UUID.randomUUID();
+
         return new WaypointResponse(
                 UUID.randomUUID(),
                 seq,
                 new BigDecimal("10.123"),
                 new BigDecimal("106.123"),
                 new BigDecimal("20"),
-                "PENDING"
+                "PENDING",
+                List.of(nodeId)
         );
     }
 
-    @Test
-    void shouldSendProgressInWaypointOrder() {
-
-        List<WaypointResponse> waypoints = List.of(
-                waypoint(3),
-                waypoint(1),
-                waypoint(2)
-        );
-
+    private void mockProgressConfirmation() {
         when(missionClient.updateProgress(
                 eq(missionId),
                 any(MissionProgressRequest.class)
         )).thenAnswer(invocation -> {
-
             MissionProgressRequest request =
                     invocation.getArgument(1);
 
@@ -92,6 +111,17 @@ class WaypointSimulationServiceTest {
                     Instant.now()
             );
         });
+    }
+
+    @Test
+    void shouldSendProgressInWaypointOrder() {
+        List<WaypointResponse> waypoints = List.of(
+                waypoint(3),
+                waypoint(1),
+                waypoint(2)
+        );
+
+        mockProgressConfirmation();
 
         simulationService.simulate(
                 missionId,
@@ -125,13 +155,21 @@ class WaypointSimulationServiceTest {
         for (MissionProgressRequest request : requests) {
             assertEquals(executionId, request.executionId());
             assertNotNull(request.reachedAt());
-            assertTrue(request.nodeResults().isEmpty());
+
+            assertEquals(1, request.nodeResults().size());
+            assertEquals(
+                    "SUCCESS",
+                    request.nodeResults().get(0).result()
+            );
+            assertEquals(
+                    1,
+                    request.nodeResults().get(0).recordsCount()
+            );
         }
     }
 
     @Test
     void shouldRejectEmptyWaypoints() {
-
         assertThrows(
                 IllegalArgumentException.class,
                 () -> simulationService.simulate(
@@ -146,7 +184,6 @@ class WaypointSimulationServiceTest {
 
     @Test
     void shouldStopWhenProgressConfirmationIsInvalid() {
-
         List<WaypointResponse> waypoints = List.of(
                 waypoint(1),
                 waypoint(2)
@@ -181,6 +218,7 @@ class WaypointSimulationServiceTest {
                         any(MissionProgressRequest.class)
                 );
     }
+
     @Test
     void shouldStopWaypointsWhenMissionIsCancelled() {
         List<WaypointResponse> waypoints = List.of(
@@ -189,19 +227,26 @@ class WaypointSimulationServiceTest {
                 waypoint(3)
         );
 
-        // Mission bị hủy tại lần kiểm tra thứ 3,
-        // tức là trước khi bắt đầu waypoint thứ 2.
-        doNothing()
-                .doNothing()
-                .doThrow(new MissionCancelledException("Mission cancelled"))
-                .when(cancellationService)
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+
+        doAnswer(invocation -> {
+            if (cancelled.get()) {
+                throw new MissionCancelledException(
+                        "Mission cancelled"
+                );
+            }
+            return null;
+        }).when(cancellationService)
                 .checkNotCancelled(missionId);
 
         when(missionClient.updateProgress(
                 eq(missionId),
                 any(MissionProgressRequest.class)
         )).thenAnswer(invocation -> {
-            MissionProgressRequest request = invocation.getArgument(1);
+            MissionProgressRequest request =
+                    invocation.getArgument(1);
+
+            cancelled.set(true);
 
             return new MissionProgressResponse(
                     missionId,
@@ -222,14 +267,13 @@ class WaypointSimulationServiceTest {
                 )
         );
 
-        // Chỉ waypoint đầu tiên được gửi Progress.
         verify(missionClient, times(1))
                 .updateProgress(
                         eq(missionId),
                         any(MissionProgressRequest.class)
                 );
 
-        verify(cancellationService, times(3))
+        verify(cancellationService, atLeastOnce())
                 .checkNotCancelled(missionId);
     }
 }

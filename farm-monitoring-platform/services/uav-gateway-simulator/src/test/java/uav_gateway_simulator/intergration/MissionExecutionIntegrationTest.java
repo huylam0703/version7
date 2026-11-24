@@ -1,12 +1,12 @@
+
 package uav_gateway_simulator.intergration;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.dto.request.*;
 import uav_gateway_simulator.dto.response.*;
-import uav_gateway_simulator.dto.request.MissionProgressRequest;
-import uav_gateway_simulator.dto.request.MissionResultRequest;
 import uav_gateway_simulator.service.*;
 
 import java.math.BigDecimal;
@@ -27,7 +27,8 @@ class MissionExecutionIntegrationTest {
         UUID farmId = UUID.randomUUID();
         UUID uavId = UUID.randomUUID();
         UUID gatewayId = UUID.randomUUID();
-        UUID nodeId = UUID.randomUUID();
+        UUID nodeId1 = UUID.randomUUID();
+        UUID nodeId2 = UUID.randomUUID();
 
         MissionReadyPayload payload = new MissionReadyPayload();
         payload.setMissionId(missionId);
@@ -42,7 +43,8 @@ class MissionExecutionIntegrationTest {
                 new BigDecimal("10.123"),
                 new BigDecimal("106.123"),
                 new BigDecimal("20"),
-                "PENDING"
+                "PENDING",
+                List.of(nodeId1)
         );
 
         WaypointResponse waypoint2 = new WaypointResponse(
@@ -50,7 +52,8 @@ class MissionExecutionIntegrationTest {
                 new BigDecimal("10.124"),
                 new BigDecimal("106.124"),
                 new BigDecimal("20"),
-                "PENDING"
+                "PENDING",
+                List.of(nodeId2)
         );
 
         MissionDetailResponse mission = new MissionDetailResponse(
@@ -58,9 +61,9 @@ class MissionExecutionIntegrationTest {
                 "Integration Test Mission",
                 "test-user", null, "RUNNING",
                 null, null, null,
-                1, 0, 0,
+                2, 0, 0,
                 List.of(waypoint2, waypoint1),
-                List.of(nodeId)
+                List.of(nodeId1, nodeId2)
         );
 
         MissionClient client = mock(MissionClient.class);
@@ -71,13 +74,34 @@ class MissionExecutionIntegrationTest {
         MissionCancellationService cancellationService =
                 mock(MissionCancellationService.class);
 
+        WaypointSensorCollectionService sensorCollectionService =
+                mock(WaypointSensorCollectionService.class);
+
+        when(sensorCollectionService.collect(
+                eq(missionId),
+                eq(executionId),
+                any(WaypointResponse.class)
+        )).thenAnswer(invocation -> {
+            WaypointResponse waypoint = invocation.getArgument(2);
+
+            return waypoint.nodeIds().stream()
+                    .map(id -> new MissionNodeProgressRequest(
+                            id,
+                            "SUCCESS",
+                            1,
+                            1,
+                            Instant.now()
+                    ))
+                    .toList();
+        });
+
         WaypointSimulationService waypointService =
                 new WaypointSimulationService(
                         client,
                         registry,
-                        cancellationService
+                        cancellationService,
+                        sensorCollectionService
                 );
-
 
         ReflectionTestUtils.setField(
                 waypointService, "waypointDelayMs", 0L
@@ -112,22 +136,21 @@ class MissionExecutionIntegrationTest {
                         cancellationService
                 );
 
-
         when(client.getMissionDetail(missionId))
                 .thenReturn(mission);
 
         when(client.ackMission(missionId, executionId))
                 .thenReturn(new MissionAckResponse(
-                        missionId, executionId,
-                        "EXECUTING", Instant.now()
+                        missionId,
+                        executionId,
+                        "EXECUTING",
+                        Instant.now()
                 ));
-
 
         when(client.updateProgress(
                 eq(missionId),
                 any(MissionProgressRequest.class)
         )).thenAnswer(invocation -> {
-
             MissionProgressRequest request =
                     invocation.getArgument(1);
 
@@ -141,12 +164,39 @@ class MissionExecutionIntegrationTest {
             );
         });
 
+        when(client.getMissionProgress(missionId))
+                .thenReturn(new MissionProgressDetailResponse(
+                        missionId,
+                        executionId,
+                        "RUNNING",
+                        "EXECUTING",
+                        2L,
+                        2,
+                        2,
+                        2,
+                        2,
+                        100.0,
+                        List.of(),
+                        List.of(
+                                new MissionProgressDetailResponse.NodeProgress(
+                                        nodeId1, "SUCCESS", 1, 1, Instant.now()
+                                ),
+                                new MissionProgressDetailResponse.NodeProgress(
+                                        nodeId2, "SUCCESS", 1, 1, Instant.now()
+                                )
+                        )
+                ));
 
         when(client.sendResults(
-                eq(missionId), any(MissionResultRequest.class)
+                eq(missionId),
+                any(MissionResultRequest.class)
         )).thenReturn(new MissionResultResponse(
-                missionId, executionId,
-                "COMPLETED", 1, 1, 0
+                missionId,
+                executionId,
+                "COMPLETED",
+                2,
+                2,
+                0
         ));
 
         assertTrue(tracker.tryStart(executionId));
@@ -175,6 +225,8 @@ class MissionExecutionIntegrationTest {
                                 && request.waypointSeq() == 2
                 )
         );
+
+        order.verify(client).getMissionProgress(missionId);
 
         order.verify(client).sendResults(
                 eq(missionId),
