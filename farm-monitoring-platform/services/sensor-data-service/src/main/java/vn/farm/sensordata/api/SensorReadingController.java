@@ -1,15 +1,17 @@
 package vn.farm.sensordata.api;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import vn.farm.sensordata.api.dto.ReadingResults.WriteStatus;
+import vn.farm.sensordata.api.dto.ReadingResults.Written;
 import vn.farm.sensordata.api.dto.SensorReadingRequest;
 import vn.farm.sensordata.application.SensorReadingService;
 import vn.farm.sensordata.domain.SensorReading;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/sensor-readings")
@@ -22,6 +24,7 @@ public class SensorReadingController {
     }
 
     @GetMapping
+    @Operation(summary = "Get recent sensor readings", description = "Includes readings marked INVALID.")
     public ResponseEntity<List<SensorReading>> getReadings(
             @RequestParam(defaultValue = "100") int limit) {
 
@@ -29,12 +32,14 @@ public class SensorReadingController {
     }
 
     @PostMapping
-    public ResponseEntity<Map<String, Object>> createReading(
+    @Operation(summary = "Store a sensor reading", description =
+            "Returns 201 for stored VALID or INVALID readings, 200 for duplicates, and 400 for malformed requests.")
+    public ResponseEntity<Written> createReading(
             @Valid @RequestBody SensorReadingRequest request) {
 
-        Map<String, Object> result = service.saveReading(request);
+        Written result = service.saveReading(request);
 
-        if ("DUPLICATE".equals(result.get("status"))) {
+        if (result.status() == WriteStatus.DUPLICATE) {
             return ResponseEntity.ok(result);
         }
 
