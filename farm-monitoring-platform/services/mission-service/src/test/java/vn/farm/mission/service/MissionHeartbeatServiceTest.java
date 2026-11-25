@@ -2,14 +2,12 @@ package vn.farm.mission.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
 import vn.farm.core.BusinessException;
 import vn.farm.mission.dto.request.MissionHeartbeatRequest;
 import vn.farm.mission.dto.response.MissionHeartbeatResponse;
 import vn.farm.mission.entity.*;
 import vn.farm.mission.repository.MissionExecutionRepository;
 
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -19,6 +17,8 @@ class MissionHeartbeatServiceTest {
 
     private MissionExecutionRepository executionRepository;
     private MissionHeartbeatService heartbeatService;
+    private MissionRecoveryOwnershipValidator ownershipValidator;
+    private MissionExecutionLockService lockService;
 
     private UUID missionId;
     private UUID executionId;
@@ -28,17 +28,9 @@ class MissionHeartbeatServiceTest {
     private MissionExecution execution;
     private MissionHeartbeatRequest request;
 
-    @Mock
-    private MissionExecutionRepository missionExecutionRepository;
-
-    @Mock
-    private MissionRecoveryOwnershipValidator ownershipValidator;
-
-    @Mock
-    private MissionExecutionLockService lockService;
-
     @BeforeEach
     void setUp() {
+
         executionRepository = mock(MissionExecutionRepository.class);
         ownershipValidator = mock(MissionRecoveryOwnershipValidator.class);
         lockService = mock(MissionExecutionLockService.class);
@@ -54,7 +46,9 @@ class MissionHeartbeatServiceTest {
         clientId = "uav-simulator-01";
 
         mission = mock(Mission.class);
-        when(mission.getStatus()).thenReturn(MissionStatus.RUNNING);
+
+        when(mission.getStatus())
+                .thenReturn(MissionStatus.RUNNING);
 
         execution = MissionExecution.builder()
                 .executionId(executionId)
@@ -63,19 +57,18 @@ class MissionHeartbeatServiceTest {
                 .assignedClientId(clientId)
                 .build();
 
-        request = new MissionHeartbeatRequest(
-                missionId,
-                executionId,
-                1L
-        );
+        request = MissionHeartbeatRequest.builder()
+                .executionId(executionId)
+                .instanceId(UUID.randomUUID())
+                .recoveryGeneration(1L)
+                .build();
+
+        when(lockService.lock(missionId, executionId))
+                .thenReturn(execution);
     }
 
     @Test
     void shouldUpdateHeartbeatSuccessfully() {
-
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.of(execution));
 
         MissionHeartbeatResponse response =
                 heartbeatService.receiveHeartbeat(
@@ -90,6 +83,7 @@ class MissionHeartbeatServiceTest {
         assertEquals("EXECUTING", response.getExecutionStatus());
 
         assertNotNull(response.getLastHeartbeatAt());
+
         assertEquals(
                 execution.getLastHeartbeatAt(),
                 response.getLastHeartbeatAt()
@@ -97,14 +91,16 @@ class MissionHeartbeatServiceTest {
 
         verify(executionRepository, times(1))
                 .save(execution);
+
+        verify(ownershipValidator).validate(
+                execution,
+                request.getInstanceId(),
+                request.getRecoveryGeneration()
+        );
     }
 
     @Test
     void shouldRejectInvalidClientId() {
-
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.of(execution));
 
         assertThrows(
                 BusinessException.class,
@@ -124,11 +120,9 @@ class MissionHeartbeatServiceTest {
     @Test
     void shouldRejectExecutionNotExecuting() {
 
-        execution.setStatus(MissionExecutionStatus.WAITING_ACK);
-
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.of(execution));
+        execution.setStatus(
+                MissionExecutionStatus.WAITING_ACK
+        );
 
         assertThrows(
                 BusinessException.class,
@@ -146,11 +140,8 @@ class MissionHeartbeatServiceTest {
     @Test
     void shouldRejectMissionNotRunning() {
 
-        when(mission.getStatus()).thenReturn(MissionStatus.COMPLETED);
-
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.of(execution));
+        when(mission.getStatus())
+                .thenReturn(MissionStatus.COMPLETED);
 
         assertThrows(
                 BusinessException.class,
@@ -168,9 +159,11 @@ class MissionHeartbeatServiceTest {
     @Test
     void shouldRejectExecutionNotFound() {
 
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.empty());
+        when(lockService.lock(missionId, executionId))
+                .thenThrow(BusinessException.notFound(
+                        "EXECUTION_NOT_FOUND",
+                        "Không tìm thấy Mission Execution"
+                ));
 
         assertThrows(
                 BusinessException.class,

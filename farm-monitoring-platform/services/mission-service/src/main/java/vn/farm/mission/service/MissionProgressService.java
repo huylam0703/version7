@@ -187,6 +187,17 @@ public class MissionProgressService {
                             "Node không thuộc Mission"
                     ));
 
+            // Kiểm tra Node được phân công đúng Waypoint
+            if (node.getWaypoint() == null
+                    || !waypoint.getWaypointId().equals(
+                    node.getWaypoint().getWaypointId()
+            )) {
+                throw BusinessException.invalid(
+                        "NODE_NOT_ASSIGNED_TO_WAYPOINT",
+                        "Node không được phân công tại Waypoint này"
+                );
+            }
+
             if (!"PENDING".equals(node.getResult())) {
                 throw BusinessException.invalid(
                         "NODE_ALREADY_PROCESSED",

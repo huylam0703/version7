@@ -1,4 +1,3 @@
-
 package vn.farm.mission.service;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +34,12 @@ class MissionProgressServiceTest {
 
     @Mock
     private MissionNodeRepository missionNodeRepository;
+
+    @Mock
+    private MissionExecutionLockService executionLockService;
+
+    @Mock
+    private MissionRecoveryOwnershipValidator ownershipValidator;
 
     @InjectMocks
     private MissionProgressService progressService;
@@ -78,6 +83,7 @@ class MissionProgressServiceTest {
         node = MissionNode.builder()
                 .missionNodeId(UUID.randomUUID())
                 .mission(mission)
+                .waypoint(waypoint)
                 .nodeId(nodeId)
                 .result("PENDING")
                 .build();
@@ -101,9 +107,9 @@ class MissionProgressServiceTest {
     }
 
     private void mockExecution() {
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.of(execution));
+        when(executionLockService.lock(
+                missionId, executionId
+        )).thenReturn(execution);
     }
 
     private void mockWaypoint() {
@@ -146,9 +152,12 @@ class MissionProgressServiceTest {
     @Test
     void TC02_executionNotFound() {
 
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.empty());
+        when(executionLockService.lock(
+                missionId, executionId
+        )).thenThrow(BusinessException.notFound(
+                "EXECUTION_NOT_FOUND",
+                "Không tìm thấy Mission Execution"
+        ));
 
         assertThrows(
                 BusinessException.class,
@@ -515,5 +524,41 @@ class MissionProgressServiceTest {
         assertThrows(BusinessException.class,
                 () -> progressService.updateProgress(missionId, request, "   "));
 
+    }
+    @Test
+    void TC22_nodeAssignedToDifferentWaypoint_shouldReject() {
+
+        Waypoint otherWaypoint = Waypoint.builder()
+                .waypointId(UUID.randomUUID())
+                .mission(mission)
+                .seq((short) 2)
+                .status("PENDING")
+                .build();
+
+        node.setWaypoint(otherWaypoint);
+
+        mockExecution();
+        mockWaypoint();
+        mockNode();
+
+        assertThrows(
+                BusinessException.class,
+                () -> progressService.updateProgress(
+                        missionId, request
+                )
+        );
+
+        assertEquals("PENDING", node.getResult());
+        assertEquals("PENDING", waypoint.getStatus());
+        assertEquals(0L, execution.getLastConfirmedSequence());
+
+        verify(missionNodeRepository, never())
+                .saveAll(anyList());
+
+        verify(waypointRepository, never())
+                .save(any());
+
+        verify(executionRepository, never())
+                .save(any());
     }
 }

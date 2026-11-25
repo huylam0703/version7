@@ -34,6 +34,6 @@ public class WaypointRequest {
     @DecimalMax("9999.99")
     BigDecimal altitudeM;
 
-    @NotEmpty
+    @NotNull
     List<@NotNull UUID> nodeIds;
 }
