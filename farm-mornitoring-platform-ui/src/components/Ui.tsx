@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import { Lock, LockOpen, TriangleAlert } from 'lucide-react'
 import type { AlertSeverity, MissionStatus, SensorStatus } from '../types'
 
 export function PageHeader({
@@ -211,6 +213,76 @@ export function Modal({
           </button>
         </div>
         {children}
+      </div>
+    </div>
+  )
+}
+export function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  tone = 'danger',
+  icon,
+  loading = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean
+  title: string
+  message: ReactNode
+  confirmText?: string
+  cancelText?: string
+  tone?: 'danger' | 'primary'
+  icon?: 'lock' | 'unlock' | 'warning'
+  loading?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, loading, onCancel])
+
+  if (!open) return null
+
+  const Icon = icon === 'unlock' ? LockOpen : icon === 'lock' ? Lock : TriangleAlert
+  const iconStyle = tone === 'danger' ? 'bg-red-50 text-red-600' : 'bg-brand-soft text-brand'
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 p-4"
+      onClick={() => {
+        if (!loading) onCancel()
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        className="w-full max-w-sm rounded-2xl border border-line bg-surface p-6 text-center shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={`mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full ${iconStyle}`}>
+          <Icon size={22} />
+        </div>
+        <h2 id="confirm-title" className="text-lg font-semibold text-ink">
+          {title}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted">{message}</p>
+        <div className="mt-6 flex justify-center gap-3">
+          <Button variant="outline" onClick={onCancel} disabled={loading}>
+            {cancelText}
+          </Button>
+          <Button variant={tone} onClick={onConfirm} disabled={loading}>
+            {loading ? 'Processing...' : confirmText}
+          </Button>
+        </div>
       </div>
     </div>
   )

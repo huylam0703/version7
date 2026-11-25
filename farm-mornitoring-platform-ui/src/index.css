@@ -48,3 +48,51 @@ button {
 ::selection {
   background: #f3d3bf;
 }
+
+/* Session expired modal */
+.session-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.session-modal {
+  width: min(420px, calc(100% - 32px));
+  background: var(--color-surface);
+  padding: 28px;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.session-modal h2 {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #dc2626;
+}
+
+.session-modal p {
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.session-modal button {
+  margin-top: 20px;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-brand);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session-modal button:hover {
+  background: var(--color-brand-dark);
+}

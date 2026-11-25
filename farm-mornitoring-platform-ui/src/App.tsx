@@ -23,6 +23,8 @@ import { MissionMonitorPage } from './pages/operator/MissionMonitorPage'
 import { MissionResultsPage } from './pages/operator/MissionResultsPage'
 import { NotificationsPage } from './pages/shared/NotificationsPage'
 import { SettingsPage } from './pages/shared/SettingsPage'
+import { ForbiddenPage } from './pages/shared/ForbiddenPage'
+import ForbiddenListener from './components/ForbiddenListener'
 import SessionExpiredListener from './components/SessionExpiredListener'
 
 function HomeRedirect() {
@@ -43,7 +45,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <SessionExpiredListener />
-
+        <ForbiddenListener />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<AppLayout />}>
@@ -68,6 +70,7 @@ export default function App() {
             <Route path="/missions/:id/results" element={<Operator><MissionResultsPage /></Operator>} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/403" element={<ForbiddenPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
