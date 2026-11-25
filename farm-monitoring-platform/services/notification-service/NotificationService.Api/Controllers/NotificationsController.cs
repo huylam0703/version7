@@ -52,7 +52,7 @@ public class NotificationsController : ControllerBase
 
     // 2. Lấy danh sách thông báo của người dùng
     [HttpGet("me")]
-    public async Task<IActionResult> GetMyNotifications(
+    public async Task<ActionResult<IEnumerable<NotificationDto>>> GetMyNotifications(
         CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
@@ -63,7 +63,16 @@ public class NotificationsController : ControllerBase
         var notifications = await _readService.GetByUserIdAsync(
             userId.Value, cancellationToken);
 
-        return Ok(notifications);
+        return Ok(notifications.Select(notification => new NotificationDto(
+            notification.Id,
+            notification.UserId,
+            notification.Title,
+            notification.Message,
+            notification.Type,
+            notification.IsRead,
+            notification.CreatedAt,
+            notification.ReadAt,
+            notification.SourceEventId)));
     }
 
     // 3. Đếm số thông báo chưa đọc
@@ -90,7 +99,10 @@ public class NotificationsController : ControllerBase
         CancellationToken cancellationToken)
     {
         if (dto.UserId == Guid.Empty)
-            return BadRequest("UserId không hợp lệ.");
+        {
+            ModelState.AddModelError(nameof(dto.UserId), "UserId không hợp lệ.");
+            return ValidationProblem(ModelState);
+        }
 
         var notification = new Notification
         {
@@ -127,7 +139,7 @@ public class NotificationsController : ControllerBase
             id, userId.Value, cancellationToken);
 
         if (!updated)
-            return NotFound("Không tìm thấy thông báo.");
+            return Problem(statusCode: 404, title: "Không tìm thấy thông báo.");
 
         return Ok(new { message = "Đã đánh dấu đã đọc" });
     }
@@ -167,7 +179,7 @@ public class NotificationsController : ControllerBase
             id, userId.Value, cancellationToken);
 
         if (!deleted)
-            return NotFound("Không tìm thấy thông báo.");
+            return Problem(statusCode: 404, title: "Không tìm thấy thông báo.");
 
         return NoContent();
     }

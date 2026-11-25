@@ -194,9 +194,83 @@ async function stop(app) {
   app.process.kill();
   await exited;
 }
-async function api(app, route, method = 'GET', token = jwt()) {
-  return fetch(`${app.url}/api/notifications${route}`, { method,
-    headers: token ? { Authorization: `Bearer ${token}` } : {} });
+async function api(app, route, method = 'GET', token = jwt(), body) {
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (body !== undefined) headers.set('Content-Type', 'application/json');
+  return fetch(`${app.url}/api/notifications${route}`, {
+    method, headers, body: JSON.stringify(body),
+  });
+}
+
+async function verifyNotificationApi(app) {
+  const ownerId = randomUUID();
+  const otherId = randomUUID();
+  const owner = jwt(ownerId, 'OPERATOR');
+  const other = jwt(otherId, 'OPERATOR');
+  const payload = { userId: ownerId, title: 'Farm update', message: 'Check the field' };
+  const create = async userId => {
+    const response = await api(app, '', 'POST', jwt(), { ...payload, userId });
+    assert.equal(response.status, 201);
+    return (await response.json()).notificationId;
+  };
+  const json = async (route, method, token) => {
+    const response = await api(app, route, method, token);
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const list = token => json('/me', 'GET', token);
+  const count = async token => (await json('/unread-count', 'GET', token)).unreadCount;
+
+  assert.equal((await api(app, '/me', 'GET', '')).status, 401);
+  assert.equal((await api(app, '', 'POST', owner, payload)).status, 403);
+  for (const invalid of [
+    { userId: '00000000-0000-0000-0000-000000000000' },
+    { title: ' '.repeat(5) },
+    { title: 'x'.repeat(256) },
+    { message: '' },
+    { type: 'x'.repeat(51) },
+  ]) {
+    const response = await api(app, '', 'POST', jwt(), { ...payload, ...invalid });
+    assert.equal(response.status, 400);
+    assert((await response.json()).errors);
+  }
+
+  const first = await create(ownerId);
+  const second = await create(ownerId);
+  const third = await create(otherId);
+  assert.deepEqual(new Set((await list(owner)).map(item => item.id)), new Set([first, second]));
+  assert.deepEqual((await list(other)).map(item => item.id), [third]);
+  assert.equal(await count(owner), 2);
+  assert.equal(await count(other), 1);
+  assert.equal(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE Id='${first}' AND UserId='${ownerId}' AND IsRead=0 AND ReadAt IS NULL`)), 1);
+
+  const readRoute = `/${first}/read`;
+  const deleteRoute = `/${first}`;
+  assert.equal((await api(app, readRoute, 'PATCH', other)).status, 404);
+  assert.equal((await api(app, deleteRoute, 'DELETE', other)).status, 404);
+  const initialRead = await Promise.all([
+    api(app, readRoute, 'PATCH', owner),
+    api(app, readRoute, 'PATCH', owner),
+  ]);
+  assert.deepEqual(initialRead.map(response => response.status), [200, 200]);
+  const readBefore = (await list(owner)).find(item => item.id === first);
+  assert.equal(readBefore.isRead, true);
+  assert(readBefore.readAt);
+  assert.equal(await count(owner), 1);
+  assert.equal((await api(app, readRoute, 'PATCH', owner)).status, 200);
+  assert.equal((await json('/read-all', 'PATCH', owner)).updatedCount, 1);
+  assert.equal((await list(owner)).find(item => item.id === first).readAt, readBefore.readAt);
+  assert.equal((await json('/read-all', 'PATCH', owner)).updatedCount, 0);
+  assert.equal(await count(owner), 0);
+  assert.equal(await count(other), 1);
+
+  assert.equal((await api(app, deleteRoute, 'DELETE', owner)).status, 204);
+  assert.equal((await api(app, deleteRoute, 'DELETE', owner)).status, 404);
+  assert.equal((await api(app, readRoute, 'PATCH', owner)).status, 404);
+  assert.equal(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE Id='${first}'`)), 0);
+  assert.equal((await api(app, `/${third}`, 'DELETE', other)).status, 204);
+  assert.equal(await count(other), 0);
 }
 const processed = id => Number(sql(`SELECT COUNT(*) FROM ProcessedNotificationEvents WHERE EventId='${id}'`)) === 1;
 const emailSent = id => Number(sql(`SELECT COUNT(*) FROM NotificationEmails WHERE EventId='${id}' AND SentAt IS NOT NULL`)) > 0;
@@ -233,7 +307,8 @@ try {
   await waitFor(async () => {
     try { return (await rabbit(`queues/${vhost}/${queue}`)).consumers === 1; } catch { return false; }
   }, 'RabbitMQ consumer');
-  assert.equal((await api(app, '/me', 'GET', '')).status, 401);
+  await verifyNotificationApi(app);
+  console.log('PASS six REST endpoints, validation, ownership and SQL Server persistence');
   const sample = event();
   await publish(sample);
   await waitFor(() => emailSent(sample.eventId), 'event and SMTP delivery');
