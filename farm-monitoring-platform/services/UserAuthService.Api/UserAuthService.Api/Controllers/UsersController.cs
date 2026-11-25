@@ -96,7 +96,19 @@ public class UsersController : ControllerBase
         return result.ToActionResult(message: "Đã mở khóa tài khoản.");
     }
 
-
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="command"></param>
+    /// <param name="ct"></param>
+    /// <returns></returns>
+    [HttpPut("me")]
+    public async Task<IActionResult> UpdateMeAsync([FromBody] UpdateMyProfileCommand command, CancellationToken ct)
+    {
+        command.UserId = CurrentUserId;
+        var result = await _mediator.Send(command, ct);
+        return result.ToActionResult(message: "Cập nhật thông tin thành công.");
+    }
     #endregion
 
     #region Queries
