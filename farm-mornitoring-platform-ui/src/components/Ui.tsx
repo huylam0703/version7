@@ -164,11 +164,24 @@ export function alertBadge(severity?: AlertSeverity) {
 }
 
 export function missionBadge(status?: MissionStatus) {
-  if (status === 'inProgress') return <Badge color="blue">In progress</Badge>
-  if (status === 'completed') return <Badge color="green">Completed</Badge>
-  if (status === 'failed') return <Badge color="red">Failed</Badge>
-  if (status === 'paused') return <Badge color="yellow">Paused</Badge>
-  if (status === 'cancelled') return <Badge color="gray">Cancelled</Badge>
+  if (status === 'running' || status === 'inProgress')
+    return <Badge color="blue">Running</Badge>
+
+  if (status === 'completed')
+    return <Badge color="green">Completed</Badge>
+
+  if (status === 'partial')
+    return <Badge color="yellow">Partial</Badge>
+
+  if (status === 'failed')
+    return <Badge color="red">Failed</Badge>
+
+  if (status === 'cancelled')
+    return <Badge color="gray">Cancelled</Badge>
+
+  if (status === 'draft')
+    return <Badge color="gray">Draft</Badge>
+
   return <Badge color="gray">Planned</Badge>
 }
 

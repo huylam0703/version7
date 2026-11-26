@@ -147,10 +147,13 @@ export type Gateway = {
 }
 
 export type MissionStatus =
+  | 'draft'
   | 'planned'
+  | 'running'
   | 'inProgress'
   | 'paused'
   | 'completed'
+  | 'partial'
   | 'failed'
   | 'cancelled'
 

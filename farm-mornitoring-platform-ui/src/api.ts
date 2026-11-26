@@ -11,7 +11,8 @@ import type {
 } from './types'
 import { mockApi } from './mockStore'
 import axiosClient from './api/axiosClient'
-import type { NotificationItem } from './types'
+import type { NotificationItem , MissionStatus } from './types'
+import { missionApi } from './api/operator/missionApi'
 
 // ===== Kiểu dữ liệu backend farm-device trả về =====
 type Page<T> = { items: T[]; page: number; pageSize: number; total: number }
@@ -37,6 +38,31 @@ type ZoneDto = {
   status: string
 }
 type UavDto = { uavId: string; farmId: string; serialNo: string; name: string; model?: string; status: string }
+
+type MissionDetailDto = {
+  missionId: string
+  farmId: string
+  uavId: string
+  gatewayId: string
+  name: string
+  createdBy: string
+  notes?: string
+  status: string
+  plannedAt?: string
+  startedAt?: string
+  endedAt?: string
+  totalNodes: number
+  successNodes: number
+  failedNodes: number
+  waypoints?: {
+    latitude: number
+    longitude: number
+    order: number
+    sensorNodeId?: string
+  }[]
+  nodeIds?: string[]
+}
+
 type GatewayDto = { gatewayId: string; uavId?: string; gatewayUid: string; name: string; status: string }
 
 // ===== Hàm dùng chung =====
@@ -255,19 +281,11 @@ export const gatewayApi = {
     ),
 }
 
-// ===== Mission, Dashboard (vẫn dùng dữ liệu giả) =====
-export const missionApi = {
-  list: () => mockApi.missions.list(),
-  get: (id: string) => mockApi.missions.get(id),
-  create: (body: Partial<Mission>) => mockApi.missions.create(body),
-  update: (id: string, body: Partial<Mission>) =>
-    mockApi.missions.updateStatus(id, body.status || 'planned', body.notes),
-  updateStatus: (id: string, status: string, notes?: string) =>
-    mockApi.missions.updateStatus(id, status as Mission['status'], notes),
-  results: (id: string) => mockApi.missions.results(id),
-}
+
 
 export const dashboardApi = {
   admin: (params?: object) => mockApi.dashboard.admin(params as { farmId?: string; range?: string }),
   operator: () => mockApi.dashboard.operator(),
 }
+
+export { missionApi }

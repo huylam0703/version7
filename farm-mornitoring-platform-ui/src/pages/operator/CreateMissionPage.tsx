@@ -23,12 +23,50 @@ export function CreateMissionPage() {
   })
 
   useEffect(() => {
-    Promise.all([farmApi.list(), sensorApi.list(), uavApi.list(), gatewayApi.list()])
-      .then(([f, n, u, g]) => {
-        setFarms(f); setNodes(n); setUavs(u); setGateways(g)
+    Promise.all([
+      farmApi.list(),
+      uavApi.list(),
+      gatewayApi.list(),
+    ])
+      .then(([f, u, g]) => {
+        setFarms(f)
+        setUavs(u)
+        setGateways(g)
       })
       .catch((e) => setError(getErrorMessage(e)))
   }, [])
+
+  useEffect(() => {
+    if (!form.farmId) {
+      setNodes([])
+      setForm((curr) => ({
+        ...curr,
+        sensorNodeIds: [],
+      }))
+      return
+    }
+
+    const fetchNodes = async () => {
+      try {
+        setError('')
+
+        const data = await sensorApi.list({
+          farmId: form.farmId,
+        })
+
+        setNodes(data)
+        setForm((curr) => ({
+          ...curr,
+          sensorNodeIds: [],
+        }))
+      } catch (e) {
+        setNodes([])
+        setError(getErrorMessage(e))
+      }
+    }
+
+    fetchNodes()
+  }, [form.farmId])
 
   const selectedNodes = nodes.filter((n) => form.sensorNodeIds.includes(n.id))
   const points = selectedNodes.filter((n) => n.latitude && n.longitude).map((n, i) => ({
@@ -49,14 +87,46 @@ export function CreateMissionPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!form.name.trim()) {
+      setError('Vui lòng nhập tên Mission')
+      return
+    }
+
+    if (!form.farmId || !form.uavId || !form.gatewayId) {
+      setError('Vui lòng chọn Farm, UAV và Gateway')
+      return
+    }
+
+    if (form.sensorNodeIds.length === 0) {
+      setError('Vui lòng chọn ít nhất một Sensor Node')
+      return
+    }
+
+    setError('')
     try {
+      setError('')
+
+      const invalidNode = selectedNodes.find(
+        (n) => n.latitude == null || n.longitude == null
+      )
+
+      if (invalidNode) {
+        setError(`Sensor Node ${invalidNode.name} chưa có tọa độ`)
+        return
+      }
+
       const waypoints = selectedNodes.map((n, i) => ({
+        latitude: n.latitude!,
+        longitude: n.longitude!,
         order: i + 1,
-        latitude: n.latitude || 0,
-        longitude: n.longitude || 0,
         sensorNodeId: n.id,
       }))
-      const created = await missionApi.create({ ...form, waypoints, status: 'planned' })
+
+      const created = await missionApi.create({
+        ...form,
+        waypoints,
+      })
+
       navigate(`/missions/${created.id}`)
     } catch (err) {
       setError(getErrorMessage(err))
@@ -87,12 +157,26 @@ export function CreateMissionPage() {
           <div>
             <p className="mb-2 text-sm font-medium">Sensor nodes / waypoints</p>
             <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border p-2">
-              {nodes.map((n) => (
-                <label key={n.id} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={form.sensorNodeIds.includes(n.id)} onChange={() => toggleNode(n.id)} />
-                  {n.code} — {n.name}
-                </label>
-              ))}
+              {!form.farmId ? (
+                <p className="text-sm text-gray-500">
+                  Please select a farm first.
+                </p>
+              ) : nodes.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No sensor nodes found for this farm.
+                </p>
+              ) : (
+                nodes.map((n) => (
+                  <label key={n.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={form.sensorNodeIds.includes(n.id)}
+                      onChange={() => toggleNode(n.id)}
+                    />
+                    {n.code} — {n.name}
+                  </label>
+                ))
+              )}
             </div>
           </div>
           <Button type="submit">Create mission</Button>

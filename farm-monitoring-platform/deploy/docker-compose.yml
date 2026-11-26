@@ -162,6 +162,8 @@ services:
        redis:
          condition: service_healthy
      environment:
+       AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
+       
        SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=mission_db;encrypt=true;trustServerCertificate=true
        SPRING_DATASOURCE_USERNAME: sa
        SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}

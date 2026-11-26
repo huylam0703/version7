@@ -8,9 +8,24 @@ import { formatDate } from '../../helpers'
 export function MissionsPage() {
   const [items, setItems] = useState<Mission[]>([])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    missionApi.list().then(setItems).catch((e) => setError(getErrorMessage(e)))
+    const fetchMissions = async () => {
+      try {
+        setLoading(true)
+        setError('')
+
+        const data = await missionApi.list()
+        setItems(data)
+      } catch (e) {
+        setError(getErrorMessage(e))
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchMissions()
   }, [])
 
   return (
@@ -22,18 +37,31 @@ export function MissionsPage() {
       />
       <ErrorBox message={error} />
       <Card>
-        {items.length === 0 ? <Empty text="No missions. Check API /api/missions" /> : (
+        {loading ? (
+          <p className="p-4 text-gray-500">Loading missions...</p>
+        ) : items.length === 0 ? (
+          <Empty text="No missions found." />
+        ) : (
           <Table headers={['Name', 'Farm', 'UAV', 'Status', 'When', 'Actions']}>
             {items.map((m) => (
               <tr key={m.id}>
                 <td className="px-3 py-2">{m.name}</td>
-                <td className="px-3 py-2">{m.farmName || '—'}</td>
-                <td className="px-3 py-2">{m.uavName || '—'}</td>
+                <td className="px-3 py-2">{m.farmName || m.farmId || '—'}</td>
+                <td className="px-3 py-2">{m.uavName || m.uavId || '—'}</td>
                 <td className="px-3 py-2">{missionBadge(m.status)}</td>
                 <td className="px-3 py-2">{formatDate(m.scheduledAt)}</td>
                 <td className="px-3 py-2 space-x-3">
-                  <Link className="text-brand" to={`/missions/${m.id}`}>Monitor</Link>
-                  <Link className="text-brand" to={`/missions/${m.id}/results`}>Results</Link>
+                  <Link className="text-brand" to={`/missions/${m.id}`}>
+                    Monitor
+                  </Link>
+
+                  <Link className="text-brand" to={`/missions/${m.id}/edit`}>
+                    Edit
+                  </Link>
+
+                  <Link className="text-brand" to={`/missions/${m.id}/results`}>
+                    Results
+                  </Link>
                 </td>
               </tr>
             ))}
