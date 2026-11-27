@@ -234,6 +234,21 @@ try {
     try { return (await rabbit(`queues/${vhost}/${queue}`)).consumers === 1; } catch { return false; }
   }, 'RabbitMQ consumer');
   assert.equal((await api(app, '/me', 'GET', '')).status, 401);
+  const serviceToken = jwt(adminId, 'SERVICE');
+  const operatorToken = jwt(randomUUID(), 'OPERATOR');
+  const notificationRoute = `/${randomUUID()}`;
+  for (const [method, route] of [
+    ['GET', '/me'],
+    ['GET', '/unread-count'],
+    ['PATCH', `${notificationRoute}/read`],
+    ['PATCH', '/read-all'],
+    ['DELETE', notificationRoute],
+  ]) {
+    assert.equal((await api(app, route, method, serviceToken)).status, 403);
+  }
+  assert.equal((await api(app, '/me', 'GET', operatorToken)).status, 200);
+  assert.equal((await api(app, '', 'POST', operatorToken)).status, 403);
+  console.log('PASS notification inbox role restrictions');
   const sample = event();
   await publish(sample);
   await waitFor(() => emailSent(sample.eventId), 'event and SMTP delivery');
