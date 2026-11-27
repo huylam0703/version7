@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
 import { Lock, LockOpen, TriangleAlert } from 'lucide-react'
 import type { AlertSeverity, MissionStatus, SensorStatus } from '../types'
-
+import type { SensorNodeDto } from '../types/sensor'
 export function PageHeader({
   title,
   description,
@@ -155,6 +155,19 @@ export function sensorStatusBadge(status?: SensorStatus) {
   if (status === 'maintenance') return <Badge color="yellow">Maintenance</Badge>
   if (status === 'lost') return <Badge color="red">Lost</Badge>
   return <Badge color="gray">Offline</Badge>
+}
+
+export function nodeStatusBadge(status: SensorNodeDto['status']) {
+  switch (status) {
+    case 'ACTIVE':
+      return <Badge color="green">Active</Badge>
+    case 'INACTIVE':
+      return <Badge color="gray">Inactive</Badge>
+    case 'MAINTENANCE':
+      return <Badge color="yellow">Maintenance</Badge>
+    case 'LOST':
+      return <Badge color="red">Lost</Badge>
+  }
 }
 
 export function alertBadge(severity?: AlertSeverity) {

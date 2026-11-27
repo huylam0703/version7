@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Line, LineChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { getErrorMessage, sensorApi, zoneApi } from '../../api'
+import { zoneApi } from '../../api/farm-device/zoneApi'
+import { getErrorMessage, sensorApi } from '../../api'
 import type { SensorReading, SensorType, Zone } from '../../types'
 import { SENSOR_TYPE_LABEL } from '../../types'
 import { Card, ErrorBox, Input, PageHeader, Select, StatCard } from '../../components/Ui'
