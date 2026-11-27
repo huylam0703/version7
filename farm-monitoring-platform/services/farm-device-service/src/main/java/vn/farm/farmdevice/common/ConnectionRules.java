@@ -39,11 +39,23 @@ public final class ConnectionRules {
             throw bad("endpointUrl phải bắt đầu bằng " + String.join(" hoặc ", SCHEMES.get(type).stream().sorted()
                     .map(s -> s + "://").toList()) + " khi connectionType là " + type + ".");
         if (uri.getHost() == null || uri.getHost().isBlank()) throw bad("endpointUrl thiếu host/IP.");
+        if (isForbiddenHost(uri.getHost()))
+            throw bad("endpointUrl không được trỏ tới localhost, loopback hoặc địa chỉ link-local/metadata.");
         if (uri.getUserInfo() != null) throw bad("endpointUrl không được chứa tài khoản/mật khẩu.");
         if (uri.getFragment() != null) throw bad("endpointUrl không được chứa '#'.");
         int port = uri.getPort();
         if (port != -1 && (port < 1 || port > 65535)) throw bad("Port của endpointUrl phải trong 1..65535.");
         if ((type == ConnectionType.TCP) && port == -1) throw bad("endpointUrl kiểu TCP phải có port.");
+    }
+
+    /** Chặn localhost, 127.x, 0.0.0.0, ::1, 169.254.x (metadata cloud). IP LAN 192.168.x/10.x của ESP32 vẫn được phép. */
+    static boolean isForbiddenHost(String host) {
+        String h = host.toLowerCase(Locale.ROOT);
+        if (h.startsWith("[") && h.endsWith("]")) h = h.substring(1, h.length() - 1);
+        return h.equals("localhost") || h.endsWith(".localhost")
+                || h.equals("0.0.0.0") || h.equals("::1") || h.equals("::")
+                || h.startsWith("127.") || h.startsWith("169.254.")
+                || h.equals("metadata.google.internal");
     }
 
     private static BusinessException bad(String msg) {

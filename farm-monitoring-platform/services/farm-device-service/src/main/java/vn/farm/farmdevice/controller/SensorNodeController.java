@@ -5,8 +5,10 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import vn.farm.farmdevice.common.Access;
 import vn.farm.farmdevice.common.PageDto;
 import vn.farm.farmdevice.common.Paging;
 import vn.farm.farmdevice.dto.SensorDtos.CreateNodeRequest;
@@ -24,6 +26,7 @@ import vn.farm.farmdevice.service.SensorNodeService;
 @RequiredArgsConstructor
 public class SensorNodeController {
     private final SensorNodeService service;
+    private final Access access;
 
     @GetMapping
     @PreAuthorize("@access.read()")
@@ -60,6 +63,9 @@ public class SensorNodeController {
     @PatchMapping("/{nodeId}")
     @PreAuthorize("@access.deviceWrite()")
     public NodeResponse update(@PathVariable UUID nodeId, @Valid @RequestBody UpdateNodeRequest body) {
+        // lastSeenAt do thiết bị/service báo; OPERATOR không được tự sửa để tránh giả mạo.
+        if (body.lastSeenAt() != null && !access.internal())
+            throw new AccessDeniedException("Chỉ SERVICE hoặc ADMIN được cập nhật lastSeenAt.");
         return service.update(nodeId, body);
     }
 
