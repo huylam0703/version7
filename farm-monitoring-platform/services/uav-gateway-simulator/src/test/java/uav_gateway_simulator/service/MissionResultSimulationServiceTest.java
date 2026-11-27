@@ -8,6 +8,8 @@ import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.request.MissionResultRequest;
 import uav_gateway_simulator.dto.response.MissionProgressDetailResponse;
 import uav_gateway_simulator.dto.response.MissionResultResponse;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
+import uav_gateway_simulator.telemetry.FlightOwnershipService;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -40,12 +42,16 @@ class MissionResultSimulationServiceTest {
 
         MissionCancellationService cancellationService =
                 mock(MissionCancellationService.class);
+        FlightLifecycleService flightLifecycleService =
+                mock(FlightLifecycleService.class);
 
         service = new MissionResultSimulationService(
                 missionClient,
                 payloadStore,
                 leaseRegistry,
-                cancellationService
+                cancellationService,
+                flightLifecycleService,
+                new FlightOwnershipService(leaseRegistry)
         );
 
         missionId = UUID.randomUUID();

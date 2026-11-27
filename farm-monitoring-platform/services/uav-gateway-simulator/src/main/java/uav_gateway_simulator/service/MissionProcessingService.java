@@ -9,6 +9,8 @@ import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
 import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 import uav_gateway_simulator.exception.MissionCancelledException;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -29,6 +31,7 @@ public class MissionProcessingService {
     private final MissionRecoveryLeaseManager recoveryLeaseManager;
     private final SimulatorInstanceIdentity simulatorInstanceIdentity;
     private final RecoveryLeaseRegistry leaseRegistry;
+    private final FlightLifecycleService flightLifecycleService;
 
     public void submit(MissionReadyPayload payload) {
         if (payload == null || payload.getExecutionId() == null) {
@@ -39,6 +42,12 @@ public class MissionProcessingService {
 
         UUID executionId = payload.getExecutionId();
         UUID missionId = payload.getMissionId();
+        FlightOwnershipToken ownershipToken =
+                new FlightOwnershipToken(
+                        executionId,
+                        null,
+                        null
+                );
 
         // Retry Results without re-executing ACK or Waypoints
         if (executionTracker.getStatus(executionId)
@@ -67,13 +76,29 @@ public class MissionProcessingService {
                     missionExecutionService.prepareMission(payload);
 
 
-                    if (!executionTracker.complete(executionId)) {
-                        throw new IllegalStateException(
-                                "Cannot complete mission execution: " + executionId
-                        );
-                    }
+                    boolean completed = leaseRegistry.runIfCurrent(
+                            ownershipToken,
+                            () -> {
 
-                    payloadStore.remove(executionId);
+                                if (!executionTracker.complete(executionId)) {
+                                    throw new IllegalStateException(
+                                            "Cannot complete mission execution: "
+                                                    + executionId
+                                    );
+                                }
+
+                                removeOwnedPayload(ownershipToken);
+                            }
+                    );
+
+                    if (!completed) {
+                        log.warn(
+                                "Ignoring stale mission completion: executionId={}",
+                                executionId
+                        );
+
+                        return;
+                    }
 
 
                     log.info(
@@ -83,8 +108,32 @@ public class MissionProcessingService {
 
                 }
                 catch (MissionCancelledException e) {
-                    executionTracker.cancel(executionId);
-                    payloadStore.remove(executionId);
+
+                    boolean cancelled = leaseRegistry.runIfCurrent(
+                            ownershipToken,
+                            () -> {
+
+                                executionTracker.cancel(executionId);
+
+                                removeOwnedPayload(ownershipToken);
+
+                                flightLifecycleService.onCancelled(
+                                        missionId,
+                                        executionId,
+                                        ownershipToken
+                                );
+                            }
+                    );
+
+                    if (!cancelled) {
+
+                        log.warn(
+                                "Ignoring stale mission cancellation: executionId={}",
+                                executionId
+                        );
+
+                        return;
+                    }
 
                     log.info(
                             "Mission simulation cancelled: missionId={}, executionId={}",
@@ -95,13 +144,35 @@ public class MissionProcessingService {
                 catch (Exception e) {
                     // Mark processing failure as FAILED.
                     // Preserve RESULTS_RETRY for the retry scheduler.
-                    executionTracker.fail(executionId);
+                    boolean handled = leaseRegistry.runIfCurrent(
+                            ownershipToken,
+                            () -> executionTracker.fail(executionId)
+                    );
+
+                    if (!handled) {
+
+                        log.warn(
+                                "Ignoring stale mission failure: executionId={}",
+                                executionId
+                        );
+
+                        return;
+                    }
 
                     if (executionTracker.getStatus(executionId)
                             == MissionExecutionTracker.Status.RESULTS_RETRY) {
 
-                        if (payloadStore.get(executionId) != null) {
-                            retryScheduler.schedule(executionId);
+                        var pending = payloadStore.get(executionId);
+
+                        if (pending != null
+                                && ownershipToken.equals(
+                                pending.ownershipToken()
+                        )) {
+
+                            retryScheduler.schedule(
+                                    executionId,
+                                    ownershipToken
+                            );
                         } else {
                             log.error(
                                     "Cannot retry Mission Results because payload is missing: executionId={}",
@@ -120,7 +191,12 @@ public class MissionProcessingService {
 
 
         } catch (RuntimeException e) {
-            executionTracker.releaseBeforeStart(executionId);
+            leaseRegistry.runIfCurrent(
+                    ownershipToken,
+                    () -> executionTracker.releaseBeforeStart(
+                            executionId
+                    )
+            );
 
             log.error(
                     "Failed to submit mission execution: executionId={}",
@@ -132,54 +208,6 @@ public class MissionProcessingService {
         }
 
     }
-
-    private void submitResultsRetry(UUID executionId) {
-        try {
-            simulationExecutor.execute(() -> {
-                try {
-                    missionResultSimulationService.retryResults(executionId);
-
-                    if (!executionTracker.complete(executionId)) {
-                        throw new IllegalStateException(
-                                "Cannot complete Results retry: " + executionId
-                        );
-                    }
-
-                    payloadStore.remove(executionId);
-
-                    log.info(
-                            "Mission Results retry completed: executionId={}",
-                            executionId
-                    );
-
-                }
-                catch (MissionCancelledException e) {
-                    executionTracker.cancel(executionId);
-                    payloadStore.remove(executionId);
-                    recoveryLeaseManager.remove(executionId);
-
-                    log.info(
-                            "Mission Results retry cancelled: executionId={}",
-                            executionId
-                    );
-                }
-                catch (Exception e) {
-                    executionTracker.markResultsRetry(executionId);
-
-                    log.error(
-                            "Mission Results retry failed: executionId={}",
-                            executionId,
-                            e
-                    );
-                }
-            });
-
-        } catch (RuntimeException e) {
-            executionTracker.markResultsRetry(executionId);
-            throw e;
-        }
-    }
-
 
 
     public boolean recover(MissionReadyPayload payload) {
@@ -226,6 +254,7 @@ public class MissionProcessingService {
             simulationExecutor.execute(() -> {
 
                 boolean claimed = false;
+                FlightOwnershipToken ownershipToken = null;
 
                 try {
                     // 1. Claim ownership trước khi resume.
@@ -253,7 +282,19 @@ public class MissionProcessingService {
                     // 2. Register lease để Heartbeat,
                     // Waypoint và Results có ownership.
                     recoveryLeaseManager.register(claim);
+
+                    ownershipToken = new FlightOwnershipToken(
+                            executionId,
+                            claim.instanceId(),
+                            claim.recoveryGeneration()
+                    );
+
                     claimed = true;
+                    flightLifecycleService.onRecovering(
+                            missionId,
+                            executionId,
+                            ownershipToken
+                    );
 
                     log.info(
                             "Recovery claimed: missionId={}, executionId={}, generation={}, leaseUntil={}",
@@ -266,19 +307,40 @@ public class MissionProcessingService {
                     // 3. Resume từ waypoint chưa hoàn thành.
                     missionExecutionService.resumeMission(payload);
 
-                    // 4. Xác nhận tracker hoàn thành.
-                    if (!executionTracker.complete(executionId)) {
-                        throw new IllegalStateException(
-                                "Cannot complete recovered execution: "
-                                        + executionId
-                        );
-                    }
+                    FlightOwnershipToken completedToken =
+                            ownershipToken;
 
-                    // 5. Chỉ xóa payload và lease
-                    // sau khi Results đã được xác nhận.
-                    payloadStore.remove(executionId);
-                    recoveryLeaseManager.remove(executionId);
-                    executionTracker.clearRecoveryTracking(executionId);
+                    boolean completed = leaseRegistry.runIfCurrent(
+                            completedToken,
+                            () -> {
+
+                                if (!executionTracker.complete(executionId)) {
+                                    throw new IllegalStateException(
+                                            "Cannot complete recovered execution: "
+                                                    + executionId
+                                    );
+                                }
+
+                                removeOwnedPayload(completedToken);
+
+                                executionTracker.clearRecoveryTracking(
+                                        executionId
+                                );
+
+                                recoveryLeaseManager.removeIfCurrent(
+                                        completedToken
+                                );
+                            }
+                    );
+
+                    if (!completed) {
+                        log.warn(
+                                "Ignoring stale recovery completion: executionId={}",
+                                executionId
+                        );
+
+                        return;
+                    }
 
                     log.info(
                             "Mission recovery completed: executionId={}",
@@ -288,16 +350,81 @@ public class MissionProcessingService {
 
                 }
                 catch (MissionCancelledException e) {
-                    executionTracker.cancel(executionId);
-                    payloadStore.remove(executionId);
 
                     if (claimed) {
-                        recoveryLeaseManager.remove(executionId);
-                    } else {
-                        leaseRegistry.cancelBeforeClaim(executionId);
-                    }
 
-                    leaseRegistry.markLost(executionId);
+                        FlightOwnershipToken cancelledToken =
+                                ownershipToken;
+
+                        boolean cancelled = leaseRegistry.runIfCurrent(
+                                cancelledToken,
+                                () -> {
+
+                                    executionTracker.cancel(executionId);
+
+                                    removeOwnedPayload(cancelledToken);
+
+                                    try {
+
+                                        flightLifecycleService.onCancelled(
+                                                missionId,
+                                                executionId,
+                                                cancelledToken
+                                        );
+
+                                    } catch (IllegalStateException ex) {
+
+                                        log.warn(
+                                                "Recovery cancellation telemetry update rejected: executionId={}",
+                                                executionId,
+                                                ex
+                                        );
+
+                                    } finally {
+
+                                        executionTracker.clearRecoveryTracking(
+                                                executionId
+                                        );
+
+                                        recoveryLeaseManager.removeIfCurrent(
+                                                cancelledToken
+                                        );
+                                    }
+                                }
+                        );
+
+                        if (!cancelled) {
+                            log.warn(
+                                    "Ignoring stale recovery cancellation: executionId={}",
+                                    executionId
+                            );
+
+                            return;
+                        }
+
+                    } else {
+
+                        leaseRegistry.runBeforeClaim(
+                                executionId,
+                                () -> {
+
+                                    executionTracker.cancel(executionId);
+
+                                    flightLifecycleService.onCancelledBeforeClaim(
+                                            missionId,
+                                            executionId
+                                    );
+
+                                    executionTracker.clearRecoveryTracking(
+                                            executionId
+                                    );
+
+                                    leaseRegistry.cancelBeforeClaim(
+                                            executionId
+                                    );
+                                }
+                        );
+                    }
 
                     log.info(
                             "Mission recovery cancelled: missionId={}, executionId={}",
@@ -307,18 +434,47 @@ public class MissionProcessingService {
                 }
                 catch (RejectedExecutionException e) {
 
-                    // Khôi phục trạng thái trước khi bắt đầu Recovery.
-                    boolean rolledBack =
-                            executionTracker.rollbackRecovery(executionId);
-                    leaseRegistry.cancelBeforeClaim(executionId);
+                    if (claimed) {
 
-                    // Ngăn execution này gửi request khi chưa có lease.
-                    leaseRegistry.markLost(executionId);
+                        FlightOwnershipToken rejectedToken =
+                                ownershipToken;
+
+                        leaseRegistry.runIfCurrent(
+                                rejectedToken,
+                                () -> {
+
+                                    executionTracker.fail(executionId);
+
+                                    executionTracker.clearRecoveryTracking(
+                                            executionId
+                                    );
+
+                                    recoveryLeaseManager.markLostIfCurrent(
+                                            rejectedToken
+                                    );
+                                }
+                        );
+
+                    } else {
+
+                        leaseRegistry.runBeforeClaim(
+                                executionId,
+                                () -> {
+
+                                    executionTracker.rollbackRecovery(
+                                            executionId
+                                    );
+
+                                    leaseRegistry.cancelBeforeClaim(
+                                            executionId
+                                    );
+                                }
+                        );
+                    }
 
                     log.error(
-                            "Recovery task rejected: executionId={}, rolledBack={}",
+                            "Recovery task rejected: executionId={}",
                             executionId,
-                            rolledBack,
                             e
                     );
 
@@ -327,20 +483,26 @@ public class MissionProcessingService {
 
                 catch (Exception e) {
 
-                    executionTracker.fail(executionId);
                     if (!claimed) {
-                        leaseRegistry.cancelBeforeClaim(executionId);
-                    }
 
-                    boolean ownershipLost =
-                            claimed
-                                    && !recoveryLeaseManager.hasValidLease(executionId);
+                        leaseRegistry.runBeforeClaim(
+                                executionId,
+                                () -> {
 
-                    if (ownershipLost) {
-                        recoveryLeaseManager.markLost(executionId);
+                                    executionTracker.fail(executionId);
+
+                                    executionTracker.clearRecoveryTracking(
+                                            executionId
+                                    );
+
+                                    leaseRegistry.cancelBeforeClaim(
+                                            executionId
+                                    );
+                                }
+                        );
 
                         log.error(
-                                "Recovery ownership lost: executionId={}",
+                                "Recovery failed before claim: executionId={}",
                                 executionId,
                                 e
                         );
@@ -348,14 +510,87 @@ public class MissionProcessingService {
                         return;
                     }
 
+                    FlightOwnershipToken failedToken =
+                            ownershipToken;
+
+                    boolean handled = leaseRegistry.runIfCurrent(
+                            failedToken,
+                            () -> {
+
+                                executionTracker.fail(executionId);
+
+                                executionTracker.clearRecoveryTracking(
+                                        executionId
+                                );
+
+                                if (!recoveryLeaseManager.hasValidLease(
+                                        executionId
+                                )) {
+
+                                    recoveryLeaseManager.markLostIfCurrent(
+                                            failedToken
+                                    );
+                                }
+                            }
+                    );
+
+                    if (!handled) {
+
+                        boolean lostOwnerHandled =
+                                leaseRegistry.runIfLostOwner(
+                                        failedToken,
+                                        () -> {
+
+                                            executionTracker.failDueToOwnershipLoss(
+                                                    executionId
+                                            );
+
+                                            executionTracker.clearRecoveryTracking(
+                                                    executionId
+                                            );
+                                        }
+                                );
+
+                        if (lostOwnerHandled) {
+
+                            log.warn(
+                                    "Recovery failed due to ownership loss: executionId={}",
+                                    executionId,
+                                    e
+                            );
+
+                        } else {
+
+                            log.warn(
+                                    "Ignoring stale recovery failure: executionId={}",
+                                    executionId
+                            );
+                        }
+
+                        return;
+                    }
+
                     if (executionTracker.getStatus(executionId)
                             == MissionExecutionTracker.Status.RESULTS_RETRY) {
 
-                        if (payloadStore.get(executionId) != null) {
-                            retryScheduler.schedule(executionId);
+                        var pending = payloadStore.get(executionId);
+
+                        if (pending != null
+                                && failedToken.equals(
+                                pending.ownershipToken()
+                        )
+                                && recoveryLeaseManager.hasValidLease(
+                                executionId
+                        )) {
+
+                            retryScheduler.schedule(
+                                    executionId,
+                                    failedToken
+                            );
                         } else {
-                            log.error(
-                                    "Recovery Results payload missing: executionId={}",
+
+                            log.warn(
+                                    "Recovery Results retry skipped: executionId={}",
                                     executionId
                             );
                         }
@@ -367,19 +602,25 @@ public class MissionProcessingService {
                             e
                     );
                 }
-                finally {
-
-                    executionTracker.clearRecoveryTracking(executionId);
-
-                }
             });
 
             return true;
 
         } catch (java.util.concurrent.RejectedExecutionException e) {
 
-            executionTracker.rollbackRecovery(executionId);
-            leaseRegistry.cancelBeforeClaim(executionId);
+            leaseRegistry.runBeforeClaim(
+                    executionId,
+                    () -> {
+
+                        executionTracker.rollbackRecovery(
+                                executionId
+                        );
+
+                        leaseRegistry.cancelBeforeClaim(
+                                executionId
+                        );
+                    }
+            );
 
             log.error(
                     "Recovery task rejected: executionId={}",
@@ -391,5 +632,19 @@ public class MissionProcessingService {
         }
     }
 
+    private void removeOwnedPayload(
+            FlightOwnershipToken ownershipToken
+    ) {
+        var pending = payloadStore.get(
+                ownershipToken.executionId()
+        );
 
+        if (pending != null
+                && ownershipToken.equals(
+                pending.ownershipToken()
+        )) {
+
+            payloadStore.remove(pending);
+        }
+    }
 }

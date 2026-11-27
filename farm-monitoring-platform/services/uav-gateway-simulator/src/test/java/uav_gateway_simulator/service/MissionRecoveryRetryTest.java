@@ -7,6 +7,7 @@ import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
 import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -43,6 +44,8 @@ class MissionRecoveryRetryTest {
         payloadStore = mock(MissionResultPayloadStore.class);
         retryScheduler = mock(MissionResultsRetryScheduler.class);
         executor = mock(ExecutorService.class);
+        FlightLifecycleService flightLifecycleService =
+                mock(FlightLifecycleService.class);
 
         tracker = new MissionExecutionTracker();
         registry = new RecoveryLeaseRegistry();
@@ -64,7 +67,8 @@ class MissionRecoveryRetryTest {
                 missionClient,
                 leaseManager,
                 instance,
-                registry
+                registry,
+                flightLifecycleService
         );
 
         missionId = UUID.randomUUID();

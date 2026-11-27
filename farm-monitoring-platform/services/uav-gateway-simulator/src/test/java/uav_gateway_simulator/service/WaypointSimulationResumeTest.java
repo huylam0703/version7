@@ -12,6 +12,9 @@ import uav_gateway_simulator.dto.response.MissionProgressResponse;
 import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 import uav_gateway_simulator.dto.MissionResumePlan;
 import uav_gateway_simulator.dto.response.WaypointResponse;
+import uav_gateway_simulator.telemetry.FlightMovementService;
+import uav_gateway_simulator.telemetry.FlightOwnershipService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -35,6 +38,7 @@ class WaypointSimulationResumeTest {
 
     private List<WaypointResponse> waypoints;
     private WaypointSensorCollectionService sensorCollectionService;
+    private FlightMovementService flightMovementService;
 
     @BeforeEach
     void setUp() {
@@ -44,12 +48,18 @@ class WaypointSimulationResumeTest {
         MissionCancellationService cancellationService =
                 mock(MissionCancellationService.class);
         sensorCollectionService = mock(WaypointSensorCollectionService.class);
+        flightMovementService =
+                mock(FlightMovementService.class);
+        FlightOwnershipService flightOwnershipService =
+                new FlightOwnershipService(leaseRegistry);
 
         this.service = new WaypointSimulationService(
                 missionClient,
                 leaseRegistry,
                 cancellationService,
-                sensorCollectionService
+                sensorCollectionService,
+                flightMovementService,
+                flightOwnershipService
         );
 
         ReflectionTestUtils.setField(
@@ -142,7 +152,14 @@ class WaypointSimulationResumeTest {
                 waypoints,
                 resumeFrom(3)
         );
-
+        verify(flightMovementService, times(1))
+                .restoreForRecovery(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(waypoints.get(1)),
+                        eq(waypoints.get(2)),
+                        any(FlightOwnershipToken.class)
+                );
         var captor = org.mockito.ArgumentCaptor.forClass(
                 MissionProgressRequest.class
         );
@@ -182,6 +199,14 @@ class WaypointSimulationResumeTest {
                 waypoints,
                 plan
         );
+        verify(flightMovementService, times(1))
+                .restoreForRecovery(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(waypoints.get(4)),
+                        isNull(),
+                        any(FlightOwnershipToken.class)
+                );
 
         verify(missionClient, never())
                 .updateProgress(any(), any());

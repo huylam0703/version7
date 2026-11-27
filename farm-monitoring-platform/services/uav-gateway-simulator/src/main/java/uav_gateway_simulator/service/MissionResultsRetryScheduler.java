@@ -7,9 +7,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
 import uav_gateway_simulator.exception.MissionCancelledException;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.util.UUID;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
@@ -22,6 +25,8 @@ public class MissionResultsRetryScheduler {
     private final MissionRecoveryLeaseManager recoveryLeaseManager;
     private final ScheduledExecutorService scheduler;
     private final MissionCancellationService cancellationService;
+    private final FlightLifecycleService flightLifecycleService;
+    private final RecoveryLeaseRegistry leaseRegistry;
 
     private final ConcurrentMap<UUID, RetryState> retryStates =
             new ConcurrentHashMap<>();
@@ -41,6 +46,8 @@ public class MissionResultsRetryScheduler {
             MissionResultPayloadStore payloadStore,
             MissionRecoveryLeaseManager recoveryLeaseManager,
             MissionCancellationService cancellationService,
+            FlightLifecycleService flightLifecycleService,
+            RecoveryLeaseRegistry leaseRegistry,
             @Qualifier("missionResultsRetryExecutor")
             ScheduledExecutorService scheduler
     ) {
@@ -49,10 +56,14 @@ public class MissionResultsRetryScheduler {
         this.payloadStore = payloadStore;
         this.recoveryLeaseManager = recoveryLeaseManager;
         this.cancellationService = cancellationService;
+        this.flightLifecycleService = flightLifecycleService;
+        this.leaseRegistry = leaseRegistry;
         this.scheduler = scheduler;
     }
 
     private static class RetryState {
+
+        private final FlightOwnershipToken ownershipToken;
 
         private final AtomicInteger attempts =
                 new AtomicInteger(0);
@@ -60,6 +71,12 @@ public class MissionResultsRetryScheduler {
         private boolean scheduled;
         private boolean running;
         private boolean exhausted;
+
+        private RetryState(
+                FlightOwnershipToken ownershipToken
+        ) {
+            this.ownershipToken = ownershipToken;
+        }
     }
 
     public void schedule(UUID executionId) {
@@ -68,84 +85,185 @@ public class MissionResultsRetryScheduler {
             return;
         }
 
-        if (executionTracker.getStatus(executionId)
-                != MissionExecutionTracker.Status.RESULTS_RETRY) {
+        MissionResultPayloadStore.PendingResult pending =
+                payloadStore.get(executionId);
+
+        if (pending == null) {
             return;
         }
 
-        if (payloadStore.get(executionId) == null) {
-            log.error(
-                    "Cannot schedule retry: payload missing, executionId={}",
-                    executionId
-            );
-            return;
-        }
-
-        // Do not schedule a retry with an invalid recovery lease.
-        if (!isOwnershipValid(executionId)) {
-            stopDueToOwnershipLoss(executionId);
-            return;
-        }
-
-        RetryState state = retryStates.computeIfAbsent(
+        schedule(
                 executionId,
-                id -> new RetryState()
+                pending.ownershipToken()
         );
+    }
 
-        synchronized (state) {
+    public void schedule(
+            UUID executionId,
+            FlightOwnershipToken ownershipToken
+    ) {
 
-            if (state.scheduled
-                    || state.running
-                    || state.exhausted) {
-                return;
-            }
-
-            if (state.attempts.get() >= maxAttempts) {
-                state.exhausted = true;
-                return;
-            }
-
-            state.scheduled = true;
-
-            try {
-                scheduler.schedule(
-                        () -> executeRetry(executionId, state),
-                        retryDelayMs,
-                        TimeUnit.MILLISECONDS
-                );
-
-                log.info(
-                        "Mission Results retry scheduled: executionId={}, delayMs={}",
-                        executionId,
-                        retryDelayMs
-                );
-
-            } catch (RuntimeException e) {
-                state.scheduled = false;
-                throw e;
-            }
+        if (!retryEnabled
+                || executionId == null
+                || ownershipToken == null
+                || !executionId.equals(
+                ownershipToken.executionId()
+        )) {
+            return;
         }
+
+        leaseRegistry.runIfCurrent(
+                ownershipToken,
+                () -> {
+
+                    if (!isOwnershipValid(ownershipToken)) {
+                        return;
+                    }
+
+                    if (executionTracker.getStatus(executionId)
+                            != MissionExecutionTracker.Status.RESULTS_RETRY) {
+                        return;
+                    }
+
+                    MissionResultPayloadStore.PendingResult pending =
+                            payloadStore.get(executionId);
+
+                    if (pending == null
+                            || !ownershipToken.equals(
+                            pending.ownershipToken()
+                    )) {
+                        return;
+                    }
+
+                    RetryState state = retryStates.compute(
+                            executionId,
+                            (id, existing) -> {
+
+                                if (existing != null
+                                        && existing.ownershipToken.equals(
+                                        ownershipToken
+                                )) {
+                                    return existing;
+                                }
+
+                                return new RetryState(
+                                        ownershipToken
+                                );
+                            }
+                    );
+
+                    synchronized (state) {
+
+                        if (state.scheduled
+                                || state.running
+                                || state.exhausted) {
+                            return;
+                        }
+
+                        if (state.attempts.get() >= maxAttempts) {
+                            state.exhausted = true;
+                            return;
+                        }
+
+                        state.scheduled = true;
+
+                        try {
+
+                            scheduler.schedule(
+                                    () -> executeRetry(
+                                            executionId,
+                                            state
+                                    ),
+                                    retryDelayMs,
+                                    TimeUnit.MILLISECONDS
+                            );
+
+                            log.info(
+                                    "Mission Results retry scheduled: executionId={}, delayMs={}, token={}",
+                                    executionId,
+                                    retryDelayMs,
+                                    ownershipToken
+                            );
+
+                        } catch (RuntimeException e) {
+
+                            state.scheduled = false;
+
+                            throw e;
+                        }
+                    }
+                }
+        );
     }
 
     private void executeRetry(
             UUID executionId,
             RetryState state
     ) {
-        boolean cancelled = false;
+        FlightOwnershipToken ownershipToken =
+                state.ownershipToken;
 
-        synchronized (state) {
-            state.scheduled = false;
+        AtomicBoolean started = new AtomicBoolean(false);
 
-            if (state.running || state.exhausted) {
-                return;
-            }
+        boolean currentOwner = leaseRegistry.runIfCurrent(
+                ownershipToken,
+                () -> {
 
-            if (!executionTracker.tryStartResultsRetry(executionId)) {
-                return;
-            }
+                    if (retryStates.get(executionId) != state
+                            || !isOwnershipValid(ownershipToken)) {
+                        return;
+                    }
 
-            state.running = true;
+                    synchronized (state) {
+
+                        state.scheduled = false;
+
+                        if (state.running
+                                || state.exhausted
+                                || state.attempts.get() >= maxAttempts) {
+                            return;
+                        }
+
+                        MissionResultPayloadStore.PendingResult pending =
+                                payloadStore.get(executionId);
+
+                        if (pending == null
+                                || !ownershipToken.equals(
+                                pending.ownershipToken()
+                        )) {
+                            return;
+                        }
+
+                        if (!executionTracker.tryStartResultsRetry(
+                                executionId
+                        )) {
+                            return;
+                        }
+
+                        state.running = true;
+
+                        started.set(true);
+                    }
+                }
+        );
+
+        if (!currentOwner) {
+
+            retryStates.remove(executionId, state);
+
+            return;
         }
+
+        if (!started.get()) {
+
+            if (!isOwnershipValid(ownershipToken)) {
+                retryStates.remove(executionId, state);
+            }
+
+            return;
+        }
+
+        boolean cancelled = false;
 
         int attempt = state.attempts.incrementAndGet();
         boolean succeeded = false;
@@ -154,7 +272,7 @@ public class MissionResultsRetryScheduler {
         try {
 
             // Recheck ownership immediately before sending.
-            if (!isOwnershipValid(executionId)) {
+            if (!isOwnershipValid(ownershipToken)) {
                 throw new RecoveryOwnershipLostException(
                         "Recovery ownership is invalid: " + executionId
                 );
@@ -168,22 +286,64 @@ public class MissionResultsRetryScheduler {
                         "Mission Results payload missing: " + executionId
                 );
             }
-
-            cancellationService.checkNotCancelled(pending.missionId());
-
-            resultSimulationService.retryResults(executionId);
-
-            if (!executionTracker.complete(executionId)) {
-                throw new IllegalStateException(
-                        "Cannot complete Mission Results retry: "
+            if (!pending.ownershipToken().equals(ownershipToken)) {
+                throw new RecoveryOwnershipLostException(
+                        "Pending Results ownership changed: "
                                 + executionId
                 );
             }
 
-            payloadStore.remove(executionId);
+            cancellationService.checkNotCancelled(pending.missionId());
 
-            // Release local lease only after completion.
-            recoveryLeaseManager.remove(executionId);
+            if (!isOwnershipValid(ownershipToken)) {
+                throw new RecoveryOwnershipLostException(
+                        "Results retry ownership lost: " + executionId
+                );
+            }
+
+            resultSimulationService.retryResults(
+                    executionId,
+                    ownershipToken
+            );
+
+            if (!isOwnershipValid(ownershipToken)) {
+                throw new RecoveryOwnershipLostException(
+                        "Results retry ownership changed: " + executionId
+                );
+            }
+
+            boolean completed = leaseRegistry.runIfCurrent(
+                    ownershipToken,
+                    () -> {
+
+                        if (!isOwnershipValid(ownershipToken)) {
+                            throw new RecoveryOwnershipLostException(
+                                    "Results retry ownership expired: "
+                                            + executionId
+                            );
+                        }
+
+                        if (!executionTracker.complete(executionId)) {
+                            throw new IllegalStateException(
+                                    "Cannot complete Mission Results retry: "
+                                            + executionId
+                            );
+                        }
+
+                        payloadStore.remove(pending);
+
+                        recoveryLeaseManager.removeIfCurrent(
+                                ownershipToken
+                        );
+                    }
+            );
+
+            if (!completed) {
+                throw new RecoveryOwnershipLostException(
+                        "Results retry completion ownership lost: "
+                                + executionId
+                );
+            }
 
             succeeded = true;
 
@@ -196,16 +356,69 @@ public class MissionResultsRetryScheduler {
         }
         catch (MissionCancelledException e) {
 
-            cancelled = true;
-            executionTracker.cancel(executionId);
-            payloadStore.remove(executionId);
-            recoveryLeaseManager.remove(executionId);
+            boolean handled = leaseRegistry.runIfCurrent(
+                    ownershipToken,
+                    () -> {
 
-            log.info(
-                    "Mission Results retry cancelled: executionId={}",
-                    executionId
+                        MissionResultPayloadStore.PendingResult pending =
+                                payloadStore.get(executionId);
+
+                        if (pending == null
+                                || !ownershipToken.equals(
+                                pending.ownershipToken()
+                        )) {
+                            return;
+                        }
+
+                        executionTracker.cancel(executionId);
+
+                        try {
+
+                            if (isOwnershipValid(ownershipToken)) {
+                                flightLifecycleService.onCancelled(
+                                        pending.missionId(),
+                                        executionId,
+                                        ownershipToken
+                                );
+                            }
+
+                        } catch (IllegalStateException ex) {
+
+                            log.warn(
+                                    "Cancellation telemetry skipped: executionId={}",
+                                    executionId,
+                                    ex
+                            );
+
+                        } finally {
+
+                            payloadStore.remove(pending);
+
+                            recoveryLeaseManager.removeIfCurrent(
+                                    ownershipToken
+                            );
+                        }
+                    }
             );
 
+            if (handled) {
+
+                cancelled = true;
+
+                log.info(
+                        "Mission Results retry cancelled: executionId={}",
+                        executionId
+                );
+
+            } else {
+
+                ownershipLost = true;
+
+                log.warn(
+                        "Ignoring stale retry cancellation: executionId={}",
+                        executionId
+                );
+            }
         }
         catch (RecoveryOwnershipLostException e) {
 
@@ -219,7 +432,7 @@ public class MissionResultsRetryScheduler {
 
         } catch (IllegalStateException e) {
 
-            if (!isOwnershipValid(executionId)) {
+            if (!isOwnershipValid(ownershipToken)) {
 
                 ownershipLost = true;
 
@@ -230,7 +443,9 @@ public class MissionResultsRetryScheduler {
                 );
 
             } else {
-                markRetryPending(executionId);
+                if (!markRetryPending(executionId, ownershipToken)) {
+                    ownershipLost = true;
+                }
 
                 log.error(
                         "Mission Results retry failed: executionId={}, attempt={}",
@@ -242,7 +457,13 @@ public class MissionResultsRetryScheduler {
 
         } catch (Exception e) {
 
-            markRetryPending(executionId);
+            if (!isOwnershipValid(ownershipToken)) {
+                ownershipLost = true;
+            } else {
+                if (!markRetryPending(executionId, ownershipToken)) {
+                    ownershipLost = true;
+                }
+            }
 
             log.error(
                     "Mission Results retry failed: executionId={}, attempt={}",
@@ -250,7 +471,6 @@ public class MissionResultsRetryScheduler {
                     attempt,
                     e
             );
-
         } finally {
 
             synchronized (state) {
@@ -269,7 +489,14 @@ public class MissionResultsRetryScheduler {
         }
 
         if (ownershipLost) {
-            stopDueToOwnershipLoss(executionId);
+            retryStates.remove(executionId, state);
+
+            log.warn(
+                    "Stale Results retry stopped: executionId={}, token={}",
+                    executionId,
+                    ownershipToken
+            );
+
             return;
         }
 
@@ -279,7 +506,22 @@ public class MissionResultsRetryScheduler {
         }
 
         if (attempt < maxAttempts) {
-            schedule(executionId);
+
+            leaseRegistry.runIfCurrent(
+                    ownershipToken,
+                    () -> {
+
+                        if (retryStates.get(executionId) == state
+                                && isOwnershipValid(ownershipToken)) {
+
+                            schedule(
+                                    executionId,
+                                    ownershipToken
+                            );
+                        }
+                    }
+            );
+
         } else {
             log.error(
                     "Mission Results retry exhausted: executionId={}, maxAttempts={}",
@@ -289,36 +531,70 @@ public class MissionResultsRetryScheduler {
         }
     }
 
-    private boolean isOwnershipValid(UUID executionId) {
+    private boolean isOwnershipValid(
+            FlightOwnershipToken ownershipToken
+    ) {
+        if (ownershipToken == null) {
+            return false;
+        }
 
         try {
-            // Null is allowed for normal, non-recovered missions.
-            recoveryLeaseManager.getValidLeaseOrNull(executionId);
-            return true;
+            var lease = recoveryLeaseManager.getValidLeaseOrNull(
+                    ownershipToken.executionId()
+            );
+
+            FlightOwnershipToken currentToken;
+
+            if (lease == null) {
+                currentToken = new FlightOwnershipToken(
+                        ownershipToken.executionId(),
+                        null,
+                        null
+                );
+            } else {
+                currentToken = new FlightOwnershipToken(
+                        ownershipToken.executionId(),
+                        lease.instanceId(),
+                        lease.recoveryGeneration()
+                );
+            }
+
+            return ownershipToken.equals(currentToken);
 
         } catch (IllegalStateException e) {
             return false;
         }
     }
 
-    private void markRetryPending(UUID executionId) {
+    private boolean markRetryPending(
+            UUID executionId,
+            FlightOwnershipToken ownershipToken
+    ) {
 
-        if (executionTracker.getStatus(executionId)
-                == MissionExecutionTracker.Status.RESULTS_PENDING) {
+        AtomicBoolean handled = new AtomicBoolean(false);
 
-            executionTracker.markResultsRetry(executionId);
-        }
-    }
+        boolean currentOwner = leaseRegistry.runIfCurrent(
+                ownershipToken,
+                () -> {
 
-    private void stopDueToOwnershipLoss(UUID executionId) {
+                    if (!isOwnershipValid(ownershipToken)) {
+                        return;
+                    }
 
-        recoveryLeaseManager.markLost(executionId);
-        executionTracker.failDueToOwnershipLoss(executionId);
+                    if (executionTracker.getStatus(executionId)
+                            == MissionExecutionTracker.Status.RESULTS_PENDING) {
 
-        log.error(
-                "Mission Results retry disabled due to ownership loss: executionId={}",
-                executionId
+                        executionTracker.markResultsRetry(
+                                executionId
+                        );
+                    }
+
+                    handled.set(true);
+                }
         );
+
+        return currentOwner && handled.get();
     }
+
 
 }

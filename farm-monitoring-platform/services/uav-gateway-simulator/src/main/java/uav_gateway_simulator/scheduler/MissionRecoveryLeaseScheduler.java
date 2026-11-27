@@ -1,4 +1,3 @@
-
 package uav_gateway_simulator.scheduler;
 
 import lombok.RequiredArgsConstructor;
@@ -24,23 +23,18 @@ public class MissionRecoveryLeaseScheduler {
 
             try {
 
-                // Check whether the current lease is still valid.
-                leaseManager.requireValidLease(executionId);
-
-                // Renew ownership with Mission Service.
                 leaseManager.renew(executionId);
 
                 log.debug(
-                        "Recovery lease renewed: executionId={}",
+                        "Recovery lease renewal processed: executionId={}",
                         executionId
                 );
 
             } catch (RecoveryOwnershipLostException e) {
 
-                // Explicit ownership rejection or invalid lease.
-                leaseManager.markLost(executionId);
-
-                log.error(
+                // Lease Manager handles ownership loss
+                // using the original ownership token.
+                log.warn(
                         "Recovery ownership lost: executionId={}",
                         executionId,
                         e
@@ -48,50 +42,21 @@ public class MissionRecoveryLeaseScheduler {
 
             } catch (IllegalStateException e) {
 
-                // The lease may have expired or changed concurrently.
-                // Check whether it is still usable.
-                if (!leaseManager.hasValidLease(executionId)) {
-
-                    leaseManager.markLost(executionId);
-
-                    log.error(
-                            "Recovery lease is no longer valid: executionId={}",
-                            executionId,
-                            e
-                    );
-
-                } else {
-
-                    log.warn(
-                            "Recovery lease renewal skipped: executionId={}",
-                            executionId,
-                            e
-                    );
-                }
+                // Do not invalidate another recovery generation.
+                log.warn(
+                        "Recovery lease renewal skipped: executionId={}",
+                        executionId,
+                        e
+                );
 
             } catch (Exception e) {
 
-                // Temporary network/server errors do not immediately
-                // invalidate an otherwise valid lease.
-                if (!leaseManager.hasValidLease(executionId)) {
-
-                    leaseManager.markLost(executionId);
-
-                    log.error(
-                            "Recovery lease expired after renewal failure: executionId={}",
-                            executionId,
-                            e
-                    );
-
-                } else {
-
-                    log.warn(
-                            "Temporary recovery lease renewal failure. "
-                                    + "Will retry on next cycle: executionId={}",
-                            executionId,
-                            e
-                    );
-                }
+                // Temporary errors will be retried on the next cycle.
+                log.warn(
+                        "Recovery lease renewal failed: executionId={}",
+                        executionId,
+                        e
+                );
             }
         }
     }

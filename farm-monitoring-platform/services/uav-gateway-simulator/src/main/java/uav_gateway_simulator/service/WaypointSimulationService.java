@@ -1,3 +1,4 @@
+
 package uav_gateway_simulator.service;
 
 import lombok.RequiredArgsConstructor;
@@ -10,7 +11,10 @@ import uav_gateway_simulator.dto.request.MissionProgressRequest;
 import uav_gateway_simulator.dto.response.MissionProgressResponse;
 import uav_gateway_simulator.dto.MissionResumePlan;
 import uav_gateway_simulator.dto.response.WaypointResponse;
+import uav_gateway_simulator.telemetry.FlightMovementService;
 import jakarta.annotation.PostConstruct;
+import uav_gateway_simulator.telemetry.FlightOwnershipService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -27,6 +31,10 @@ public class WaypointSimulationService {
     private final MissionCancellationService cancellationService;
     private final WaypointSensorCollectionService sensorCollectionService;
 
+    // UAV-09: Realtime Flight Telemetry
+    private final FlightMovementService flightMovementService;
+    private final FlightOwnershipService flightOwnershipService;
+
     @Value("${simulator.flight.waypoint-delay-ms:3000}")
     private long waypointDelayMs;
 
@@ -35,6 +43,22 @@ public class WaypointSimulationService {
             UUID executionId,
             List<WaypointResponse> waypoints
     ) {
+        simulate(
+                missionId,
+                executionId,
+                waypoints,
+                flightOwnershipService.capture(executionId)
+        );
+    }
+
+    public void simulate(
+            UUID missionId,
+            UUID executionId,
+            List<WaypointResponse> waypoints,
+            FlightOwnershipToken ownershipToken
+    ) {
+        validateOwnership(executionId, ownershipToken);
+
         if (waypoints == null || waypoints.isEmpty()) {
             throw new IllegalArgumentException(
                     "Mission has no waypoints"
@@ -47,6 +71,8 @@ public class WaypointSimulationService {
 
         long progressSequence = 1;
 
+        WaypointResponse previousWaypoint = null;
+
         log.info(
                 "Starting waypoint simulation: missionId={}, executionId={}, totalWaypoints={}",
                 missionId,
@@ -58,19 +84,29 @@ public class WaypointSimulationService {
 
             cancellationService.checkNotCancelled(missionId);
 
-            try {
-                Thread.sleep(waypointDelayMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(
-                        "Waypoint simulation interrupted", e
+            if (waypoint.seq() < 0
+                    || waypoint.seq() > Short.MAX_VALUE) {
+                throw new IllegalArgumentException(
+                        "Invalid waypoint sequence: " + waypoint.seq()
                 );
             }
 
-            cancellationService.checkNotCancelled(missionId);
+            // UAV-09: Simulate realtime flight movement.
+            flightMovementService.move(
+                    missionId,
+                    executionId,
+                    previousWaypoint,
+                    waypoint,
+                    waypointDelayMs,
+                    () -> {
+                        cancellationService.checkNotCancelled(missionId);
+                        flightOwnershipService.validate(ownershipToken);
+                    },
+                    ownershipToken
+            );
 
-            // Kiểm tra Recovery Lease trước khi gửi Progress
-            leaseRegistry.getForWrite(executionId);
+            cancellationService.checkNotCancelled(missionId);
+            flightOwnershipService.validate(ownershipToken);
 
             log.info(
                     "Waypoint reached: missionId={}, waypointId={}, seq={}",
@@ -78,13 +114,6 @@ public class WaypointSimulationService {
                     waypoint.waypointId(),
                     waypoint.seq()
             );
-
-            if (waypoint.seq() < 0 ||
-                    waypoint.seq() > Short.MAX_VALUE) {
-                throw new IllegalArgumentException(
-                        "Invalid waypoint sequence: " + waypoint.seq()
-                );
-            }
 
             List<MissionNodeProgressRequest> nodeResults =
                     sensorCollectionService.collect(
@@ -94,7 +123,7 @@ public class WaypointSimulationService {
                     );
 
             cancellationService.checkNotCancelled(missionId);
-            leaseRegistry.getForWrite(executionId);
+            flightOwnershipService.validate(ownershipToken);
 
             MissionProgressRequest request =
                     new MissionProgressRequest(
@@ -110,7 +139,7 @@ public class WaypointSimulationService {
                             missionId,
                             request
                     );
-
+            flightOwnershipService.validate(ownershipToken);
 
             if (response == null
                     || !missionId.equals(response.missionId())
@@ -124,7 +153,6 @@ public class WaypointSimulationService {
                 );
             }
 
-
             log.info(
                     "Progress confirmed: missionId={}, executionId={}, sequence={}, waypointSeq={}",
                     missionId,
@@ -132,6 +160,9 @@ public class WaypointSimulationService {
                     progressSequence,
                     waypoint.seq()
             );
+
+            // Only advance after Mission Service confirms progress.
+            previousWaypoint = waypoint;
 
             progressSequence++;
         }
@@ -150,6 +181,23 @@ public class WaypointSimulationService {
             List<WaypointResponse> waypoints,
             MissionResumePlan plan
     ) {
+        simulateResume(
+                missionId,
+                executionId,
+                waypoints,
+                plan,
+                flightOwnershipService.capture(executionId)
+        );
+    }
+
+    public void simulateResume(
+            UUID missionId,
+            UUID executionId,
+            List<WaypointResponse> waypoints,
+            MissionResumePlan plan,
+            FlightOwnershipToken ownershipToken
+    ) {
+        validateOwnership(executionId, ownershipToken);
         if (plan == null
                 || !missionId.equals(plan.missionId())
                 || !executionId.equals(plan.executionId())) {
@@ -157,9 +205,11 @@ public class WaypointSimulationService {
                     "Invalid mission resume plan"
             );
         }
-        if (leaseRegistry.getForWrite(executionId) == null) {
+
+
+        if (!ownershipToken.isRecovery()) {
             throw new IllegalStateException(
-                    "Recovery lease is required: " + executionId
+                    "Recovery claim required: " + executionId
             );
         }
 
@@ -180,16 +230,34 @@ public class WaypointSimulationService {
                 .toList();
 
         if (plan.allWaypointsReached()) {
+
             if (plan.nextWaypointSeq() != null) {
                 throw new IllegalStateException(
                         "Invalid completed resume plan"
                 );
             }
 
+            cancellationService.checkNotCancelled(missionId);
+            flightOwnershipService.validate(ownershipToken);
+
+            WaypointResponse lastWaypoint =
+                    sortedWaypoints.get(
+                            sortedWaypoints.size() - 1
+                    );
+
+            flightMovementService.restoreForRecovery(
+                    missionId,
+                    executionId,
+                    lastWaypoint,
+                    null,
+                    ownershipToken
+            );
+
             log.info(
                     "All waypoints already reached: executionId={}",
                     executionId
             );
+
             return;
         }
 
@@ -202,8 +270,10 @@ public class WaypointSimulationService {
         int startIndex = -1;
 
         for (int i = 0; i < sortedWaypoints.size(); i++) {
+
             if (sortedWaypoints.get(i).seq()
                     == plan.nextWaypointSeq()) {
+
                 startIndex = i;
                 break;
             }
@@ -217,29 +287,65 @@ public class WaypointSimulationService {
 
         long progressSequence = plan.nextProgressSequence();
 
+        WaypointResponse previousWaypoint =
+                startIndex > 0
+                        ? sortedWaypoints.get(startIndex - 1)
+                        : null;
+
+        cancellationService.checkNotCancelled(missionId);
+        flightOwnershipService.validate(ownershipToken);
+
+        // UAV-09: Restore telemetry from confirmed progress.
+        flightMovementService.restoreForRecovery(
+                missionId,
+                executionId,
+                previousWaypoint,
+                sortedWaypoints.get(startIndex),
+                ownershipToken
+        );
+
+        log.info(
+                "[FLIGHT RECOVERY] Telemetry restored: missionId={}, executionId={}, nextWaypointSeq={}",
+                missionId,
+                executionId,
+                sortedWaypoints.get(startIndex).seq()
+        );
+
         for (int i = startIndex; i < sortedWaypoints.size(); i++) {
+
             WaypointResponse waypoint = sortedWaypoints.get(i);
 
             cancellationService.checkNotCancelled(missionId);
+            flightOwnershipService.validate(ownershipToken);
 
             if (waypoint.seq() < 0
                     || waypoint.seq() > Short.MAX_VALUE) {
+
                 throw new IllegalArgumentException(
-                        "Invalid waypoint sequence: " + waypoint.seq()
+                        "Invalid waypoint sequence: "
+                                + waypoint.seq()
                 );
             }
 
-            try {
-                Thread.sleep(waypointDelayMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(
-                        "Waypoint resume interrupted", e
-                );
-            }
+            // UAV-09: Resume realtime flight movement.
+            flightMovementService.move(
+                    missionId,
+                    executionId,
+                    previousWaypoint,
+                    waypoint,
+                    waypointDelayMs,
+                    () -> {
+                        cancellationService.checkNotCancelled(missionId);
+
+                        flightOwnershipService.validate(
+                                ownershipToken
+                        );
+                    },
+                    ownershipToken
+            );
+
             cancellationService.checkNotCancelled(missionId);
-            // Recovery phải còn quyền sở hữu execution.
-            leaseRegistry.getForWrite(executionId);
+            flightOwnershipService.validate(ownershipToken);
 
             List<MissionNodeProgressRequest> nodeResults =
                     sensorCollectionService.collect(
@@ -249,7 +355,7 @@ public class WaypointSimulationService {
                     );
 
             cancellationService.checkNotCancelled(missionId);
-            leaseRegistry.getForWrite(executionId);
+            flightOwnershipService.validate(ownershipToken);
 
             MissionProgressRequest request =
                     new MissionProgressRequest(
@@ -261,7 +367,13 @@ public class WaypointSimulationService {
                     );
 
             MissionProgressResponse response =
-                    missionClient.updateProgress(missionId, request);
+                    missionClient.updateProgress(
+                            missionId,
+                            request
+                    );
+
+            // Reject stale worker after receiving response.
+            flightOwnershipService.validate(ownershipToken);
 
             if (response == null
                     || !missionId.equals(response.missionId())
@@ -269,7 +381,9 @@ public class WaypointSimulationService {
                     || response.lastConfirmedSequence()
                     != progressSequence
                     || response.waypointSeq() == null
-                    || response.waypointSeq() != waypoint.seq()) {
+                    || response.waypointSeq().intValue()
+                    != waypoint.seq()) {
+
                 throw new IllegalStateException(
                         "Invalid resume progress confirmation"
                 );
@@ -282,14 +396,19 @@ public class WaypointSimulationService {
                     progressSequence
             );
 
+            previousWaypoint = waypoint;
+
             progressSequence++;
         }
 
         log.info(
-                "Waypoint resume completed: executionId={}",
+                "Waypoint resume completed: missionId={}, executionId={}",
+                missionId,
                 executionId
         );
     }
+
+
     @PostConstruct
     public void init() {
         log.info(
@@ -298,4 +417,21 @@ public class WaypointSimulationService {
         );
     }
 
+    private void validateOwnership(
+            UUID executionId,
+            FlightOwnershipToken ownershipToken
+    ) {
+        if (executionId == null
+                || ownershipToken == null
+                || !executionId.equals(
+                ownershipToken.executionId()
+        )) {
+
+            throw new IllegalArgumentException(
+                    "Waypoint ownership token mismatch"
+            );
+        }
+
+        flightOwnershipService.validate(ownershipToken);
+    }
 }

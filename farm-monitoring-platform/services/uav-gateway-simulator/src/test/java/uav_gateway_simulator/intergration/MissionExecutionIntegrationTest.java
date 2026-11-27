@@ -2,12 +2,15 @@
 package uav_gateway_simulator.intergration;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
 import org.springframework.test.util.ReflectionTestUtils;
 import uav_gateway_simulator.client.MissionClient;
+import uav_gateway_simulator.config.FlightTelemetryProperties;
 import uav_gateway_simulator.dto.*;
 import uav_gateway_simulator.dto.request.*;
 import uav_gateway_simulator.dto.response.*;
 import uav_gateway_simulator.service.*;
+import uav_gateway_simulator.telemetry.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -20,6 +23,8 @@ import static org.mockito.Mockito.*;
 
 class MissionExecutionIntegrationTest {
 
+    private FlightMovementService flightMovementService;
+
     @Test
     void shouldExecuteWaypointsAndSendResultsInOrder() {
         UUID missionId = UUID.randomUUID();
@@ -29,6 +34,29 @@ class MissionExecutionIntegrationTest {
         UUID gatewayId = UUID.randomUUID();
         UUID nodeId1 = UUID.randomUUID();
         UUID nodeId2 = UUID.randomUUID();
+        RecoveryLeaseRegistry registry = new RecoveryLeaseRegistry();
+        FlightOwnershipService flightOwnershipService =
+                new FlightOwnershipService(registry);
+        FlightTelemetryProperties telemetryProperties =
+                new FlightTelemetryProperties(
+                        true,
+                        1000L,
+                        0.02,
+                        100.0,
+                        1000L,
+                        0L
+                );
+        FlightTelemetryService telemetryService =
+                new FlightTelemetryService(telemetryProperties);
+        FlightMovementService flightMovementService =
+                new FlightMovementService(
+                        new FlightPositionCalculator(),
+                        telemetryService,
+                        flightOwnershipService,
+                        telemetryProperties
+                );
+        FlightLifecycleService flightLifecycleService =
+                new FlightLifecycleService(telemetryService, flightOwnershipService, registry);
 
         MissionReadyPayload payload = new MissionReadyPayload();
         payload.setMissionId(missionId);
@@ -68,7 +96,7 @@ class MissionExecutionIntegrationTest {
 
         MissionClient client = mock(MissionClient.class);
         MissionExecutionTracker tracker = new MissionExecutionTracker();
-        RecoveryLeaseRegistry registry = new RecoveryLeaseRegistry();
+        RecoveryLeaseRegistry registrys = new RecoveryLeaseRegistry();
         MissionResultPayloadStore store = new MissionResultPayloadStore();
 
         MissionCancellationService cancellationService =
@@ -84,6 +112,11 @@ class MissionExecutionIntegrationTest {
         )).thenAnswer(invocation -> {
             WaypointResponse waypoint = invocation.getArgument(2);
 
+            FlightTelemetry snapshot = telemetryService.getLatest(missionId).orElseThrow();
+            assertEquals(FlightStatus.COLLECTING, snapshot.flightStatus());
+            assertEquals(waypoint.seq(), snapshot.currentWaypointSeq());
+            assertEquals(waypoint.lat().doubleValue(), snapshot.latitude(), 0.000001);
+            assertEquals(waypoint.lng().doubleValue(), snapshot.longitude(), 0.000001);
             return waypoint.nodeIds().stream()
                     .map(id -> new MissionNodeProgressRequest(
                             id,
@@ -98,9 +131,11 @@ class MissionExecutionIntegrationTest {
         WaypointSimulationService waypointService =
                 new WaypointSimulationService(
                         client,
-                        registry,
+                        registrys,
                         cancellationService,
-                        sensorCollectionService
+                        sensorCollectionService,
+                        flightMovementService,
+                        flightOwnershipService
                 );
 
         ReflectionTestUtils.setField(
@@ -111,8 +146,10 @@ class MissionExecutionIntegrationTest {
                 new MissionResultSimulationService(
                         client,
                         store,
-                        registry,
-                        cancellationService
+                        registrys,
+                        cancellationService,
+                        flightLifecycleService,
+                        flightOwnershipService
                 );
 
         MissionHeartbeatScheduler heartbeat =
@@ -133,7 +170,8 @@ class MissionExecutionIntegrationTest {
                         tracker,
                         resumePlanner,
                         leaseManager,
-                        cancellationService
+                        cancellationService,
+                        flightOwnershipService
                 );
 
         when(client.getMissionDetail(missionId))
@@ -233,8 +271,20 @@ class MissionExecutionIntegrationTest {
                 any(MissionResultRequest.class)
         );
 
-        verify(heartbeat).start(missionId, executionId);
-        verify(heartbeat).stop(executionId);
+        FlightOwnershipToken expectedToken =
+                new FlightOwnershipToken(
+                        executionId,
+                        null,
+                        null
+                );
+
+        verify(heartbeat).start(
+                eq(missionId),
+                eq(executionId),
+                eq(expectedToken)
+        );
+
+        verify(heartbeat).stop(eq(expectedToken));
 
         assertEquals(
                 MissionExecutionTracker.Status.RESULTS_PENDING,
@@ -242,5 +292,11 @@ class MissionExecutionIntegrationTest {
         );
 
         assertNotNull(store.get(executionId));
+        FlightTelemetry finalSnapshot = telemetryService.getLatest(missionId).orElseThrow();
+        assertEquals(FlightStatus.COMPLETED, finalSnapshot.flightStatus());
+        assertEquals(executionId, finalSnapshot.executionId());
+        assertEquals(2, finalSnapshot.currentWaypointSeq());
+        assertNull(finalSnapshot.targetWaypointSeq());
+        assertEquals(0.0, finalSnapshot.speedMps(), 0.001);
     }
 }
