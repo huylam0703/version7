@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import vn.farm.core.api.ApiResponse;
 import vn.farm.alert.dto.request.CreateAlertRequest;
@@ -22,6 +23,7 @@ public class AlertController {
 
     private final AlertService alertService;
 
+    @PreAuthorize("@alertAccess.canManage()")
     @PostMapping
     public ResponseEntity<ApiResponse<AlertResponse>> createAlert(
             @Valid @RequestBody CreateAlertRequest request) {
@@ -35,6 +37,7 @@ public class AlertController {
                         .build());
     }
 
+    @PreAuthorize("@alertAccess.canView()")
     @GetMapping
     public ApiResponse<List<AlertResponse>> getAllAlerts() {
         return ApiResponse.<List<AlertResponse>>builder()
@@ -43,6 +46,7 @@ public class AlertController {
                 .build();
     }
 
+    @PreAuthorize("@alertAccess.canView()")
     @GetMapping("/{id}")
     public ApiResponse<AlertResponse> getAlertById(
             @PathVariable UUID id) {
@@ -53,6 +57,7 @@ public class AlertController {
                 .build();
     }
 
+    @PreAuthorize("@alertAccess.canView()")
     @GetMapping("/node/{nodeId}")
     public ApiResponse<List<AlertResponse>> getAlertsByNodeId(
             @PathVariable UUID nodeId) {
@@ -63,6 +68,7 @@ public class AlertController {
                 .build();
     }
 
+    @PreAuthorize("@alertAccess.canView()")
     @GetMapping("/status/{status}")
     public ApiResponse<List<AlertResponse>> getAlertsByStatus(
             @PathVariable AlertStatus status) {
@@ -74,6 +80,7 @@ public class AlertController {
     }
 
     // Lọc Alert theo Node ID và trạng thái
+    @PreAuthorize("@alertAccess.canView()")
     @GetMapping("/node/{nodeId}/status/{status}")
     public ApiResponse<List<AlertResponse>> getAlertsByNodeIdAndStatus(
             @PathVariable UUID nodeId,
@@ -85,6 +92,7 @@ public class AlertController {
                 .build();
     }
 
+    @PreAuthorize("@alertAccess.canManage()")
     @PatchMapping("/{id}/acknowledge")
     public ApiResponse<AlertResponse> acknowledgeAlert(
             @PathVariable UUID id) {
@@ -95,6 +103,7 @@ public class AlertController {
                 .build();
     }
 
+    @PreAuthorize("@alertAccess.canManage()")
     @PatchMapping("/{id}/resolve")
     public ApiResponse<AlertResponse> resolveAlert(
             @PathVariable UUID id) {

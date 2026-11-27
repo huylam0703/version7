@@ -29,8 +29,8 @@ public class SensorReadingListener {
     public void handleReadingsSynced(
             EventEnvelope<ReadingsSyncedPayload> event
     ) {
-        if (event == null || event.payload() == null) {
-            log.warn("Received readings.synced with empty payload");
+        if (event == null || event.version() != 1 || event.payload() == null) {
+            log.warn("Received unsupported readings.synced event or empty payload");
             return;
         }
 
@@ -63,7 +63,11 @@ public class SensorReadingListener {
 
                 CreateAlertRequest request = new CreateAlertRequest();
                 request.setNodeId(reading.nodeId());
-                request.setAlertType(result.sensorCode());
+                request.setAlertType("OUT_OF_RANGE");
+                request.setZoneId(reading.zoneId());
+                request.setMissionId(reading.missionId());
+                request.setTriggerValue(reading.value());
+                request.setTriggeredAt(reading.measuredAt());
                 request.setSeverity(result.severity());
                 request.setMessage(result.message());
                 // Task 8: Gắn ID bản ghi cảm biến để chống trùng

@@ -18,5 +18,7 @@ public interface AlertRepository extends JpaRepository<Alert, UUID> {
             AlertStatus status
     );
 
+    boolean existsByMissionIdAndAlertType(UUID missionId, String alertType);
+
     boolean existsByReadingId(UUID readingId);
 }

@@ -2,15 +2,13 @@ package vn.farm.alert;
 
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import vn.farm.alert.dto.event.AlertCreatedPayload;
 import vn.farm.alert.dto.request.CreateAlertRequest;
 import vn.farm.alert.entity.Alert;
 import vn.farm.alert.entity.AlertSeverity;
 import vn.farm.alert.entity.AlertStatus;
 import vn.farm.alert.mapper.AlertMapper;
-import vn.farm.alert.publisher.AlertEventPublisher;
+import vn.farm.alert.outbox.AlertOutboxService;
 import vn.farm.alert.repository.AlertRepository;
 import vn.farm.alert.service.AlertService;
 import vn.farm.alert.validation.AlertValidator;
@@ -33,12 +31,12 @@ import static org.mockito.Mockito.when;
 class AlertServiceTests {
 
     private final AlertRepository repository = mock(AlertRepository.class);
-    private final AlertEventPublisher publisher = mock(AlertEventPublisher.class);
+    private final AlertOutboxService outbox = mock(AlertOutboxService.class);
     private final AlertService service = new AlertService(
-            repository, Mappers.getMapper(AlertMapper.class), new AlertValidator(), publisher);
+            repository, Mappers.getMapper(AlertMapper.class), new AlertValidator(), outbox);
 
     @Test
-    void createsNewAlertAndPublishesOnlyAfterCommit() {
+    void createsNewAlertAndEnqueuesEvent() {
         CreateAlertRequest request = validRequest();
         UUID alertId = UUID.randomUUID();
         UUID readingId = UUID.randomUUID();
@@ -49,24 +47,15 @@ class AlertServiceTests {
             return saved;
         });
 
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            var response = service.createAlert(request);
+        var response = service.createAlert(request);
 
-            assertEquals(alertId, response.getId());
-            assertEquals(AlertStatus.NEW, response.getStatus());
-            assertEquals(readingId, response.getReadingId());
-            verifyNoInteractions(publisher);
-
-            TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
-
-            verify(publisher).publishAlertCreated(argThat((AlertCreatedPayload payload) ->
-                    alertId.equals(payload.alertId())
-                            && readingId.equals(payload.readingId())
-                            && "OUT_OF_RANGE".equals(payload.type())));
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        assertEquals(alertId, response.getId());
+        assertEquals(AlertStatus.NEW, response.getStatus());
+        assertEquals(readingId, response.getReadingId());
+        verify(outbox).saveAlertCreated(argThat((AlertCreatedPayload payload) ->
+                alertId.equals(payload.alertId())
+                        && readingId.equals(payload.readingId())
+                        && "OUT_OF_RANGE".equals(payload.type())));
     }
 
     @Test
@@ -119,7 +108,7 @@ class AlertServiceTests {
         var error = assertThrows(BusinessException.class, () -> service.createAlert(request));
 
         assertEquals("INVALID_MESSAGE", error.getCode());
-        verifyNoInteractions(repository, publisher);
+        verifyNoInteractions(repository, outbox);
     }
 
     @Test
@@ -134,7 +123,7 @@ class AlertServiceTests {
         assertEquals("DUPLICATE_SENSOR_ALERT", error.getCode());
         verify(repository).existsByReadingId(readingId);
         verifyNoMoreInteractions(repository);
-        verifyNoInteractions(publisher);
+        verifyNoInteractions(outbox);
     }
 
     private static CreateAlertRequest validRequest() {

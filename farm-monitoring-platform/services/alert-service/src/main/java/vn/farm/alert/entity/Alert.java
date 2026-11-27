@@ -19,8 +19,9 @@ public class Alert {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false)
     private UUID nodeId;
+
+    private UUID missionId;
 
     @Column(length = 50, nullable = false)
     private String alertType;

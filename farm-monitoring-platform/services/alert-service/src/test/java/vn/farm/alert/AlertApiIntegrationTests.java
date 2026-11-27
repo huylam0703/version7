@@ -10,31 +10,43 @@ import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
+
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.core.AmqpAdmin;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.support.TransactionTemplate;
+
 import vn.farm.alert.dto.event.EventEnvelope;
 import vn.farm.alert.dto.event.ReadingsSyncedPayload;
+import vn.farm.alert.dto.request.CreateAlertRequest;
 import vn.farm.alert.entity.AlertSeverity;
 import vn.farm.alert.entity.AlertStatus;
 import vn.farm.alert.listener.SensorReadingListener;
+import vn.farm.alert.outbox.AlertOutboxRepository;
+import vn.farm.alert.publisher.AlertEventPublisher;
 import vn.farm.alert.repository.AlertRepository;
+import vn.farm.alert.service.AlertService;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -43,6 +55,13 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -61,7 +80,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "springdoc.api-docs.enabled=false",
         "springdoc.swagger-ui.enabled=false",
         "spring.rabbitmq.listener.simple.auto-startup=false",
-        "spring.rabbitmq.dynamic=false"
+        "spring.rabbitmq.dynamic=false",
+        "alert.outbox.enabled=false"
 })
 @AutoConfigureMockMvc
 class AlertApiIntegrationTests {
@@ -78,6 +98,21 @@ class AlertApiIntegrationTests {
 
     @Autowired
     private SensorReadingListener readings;
+
+    @Autowired
+    private AlertOutboxRepository outbox;
+
+    @Autowired
+    private AlertEventPublisher publisher;
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private TransactionTemplate transactions;
+
+    @Autowired
+    private AlertService alertService;
 
     @MockitoBean
     private RabbitTemplate rabbitTemplate;
@@ -115,7 +150,59 @@ class AlertApiIntegrationTests {
 
     @BeforeEach
     void clearAlerts() {
+        outbox.deleteAll();
         repository.deleteAll();
+    }
+
+    @Test
+    void retriesPendingAlertWithTheSameEventId() throws Exception {
+        createAlert(UUID.randomUUID(), "ADMIN");
+        var pending = outbox.findAll().getFirst();
+        var eventId = pending.getEventId();
+
+        doAnswer(invocation -> {
+            throw new AmqpConnectException(new ConnectException("Broker unavailable"));
+        }).when(rabbitTemplate).send(eq("farm.events"), eq("alert.created"),
+                any(Message.class), any(CorrelationData.class));
+
+        assertFalse(publisher.publish(eventId));
+        var retry = outbox.findById(eventId).orElseThrow();
+        assertEquals(1L, retry.getAttempts());
+        assertNull(retry.getPublishedAt());
+        assertEquals(1, repository.count());
+
+        jdbc.update("update dbo_AL_OutboxEvents set NextRetryAt = CURRENT_TIMESTAMP");
+        doAnswer(invocation -> {
+            Message message = invocation.getArgument(2);
+            CorrelationData correlation = invocation.getArgument(3);
+            assertEquals(eventId.toString(), message.getMessageProperties().getMessageId());
+            assertEquals(pending.getPayload(), new String(message.getBody(), StandardCharsets.UTF_8));
+            correlation.getFuture().complete(new CorrelationData.Confirm(true, null));
+            return null;
+        }).when(rabbitTemplate).send(eq("farm.events"), eq("alert.created"),
+                any(Message.class), any(CorrelationData.class));
+
+        assertTrue(publisher.publish(eventId));
+        assertNotNull(outbox.findById(eventId).orElseThrow().getPublishedAt());
+        assertEquals(1, outbox.count());
+    }
+
+    @Test
+    void rollsBackAlertAndOutboxTogether() {
+        var request = new CreateAlertRequest();
+        request.setNodeId(UUID.randomUUID());
+        request.setAlertType("OUT_OF_RANGE");
+        request.setSeverity(AlertSeverity.HIGH);
+        request.setMessage("Test rollback");
+
+        transactions.executeWithoutResult(status -> {
+            alertService.createAlert(request);
+            assertEquals(1, outbox.count());
+            status.setRollbackOnly();
+        });
+
+        assertEquals(0, repository.count());
+        assertEquals(0, outbox.count());
     }
 
     @Test

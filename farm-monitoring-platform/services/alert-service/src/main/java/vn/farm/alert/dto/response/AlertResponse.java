@@ -12,6 +12,8 @@ public class AlertResponse {
     private UUID id;
 
     private UUID nodeId;
+    private UUID missionId;
+    private UUID readingId;
 
     private String alertType;
 

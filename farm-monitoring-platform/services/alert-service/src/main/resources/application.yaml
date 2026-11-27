@@ -7,6 +7,12 @@ spring:
   application:
     name: alert-service
 
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8081/.well-known/jwks.json}
+
 
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
@@ -41,7 +47,7 @@ management:
       enabled: false
 farm:
   security:
-    enabled: false
+    enabled: true
 
   alert:
     sensor:
