@@ -29,7 +29,7 @@ import vn.farm.farmdevice.service.SensorNodeService;
 /** Test API (MockMvc standalone, dùng WebErrorHandler thật) + test phân quyền của Access.internal(). */
 class SensorNodeConnectionApiTest {
     private final SensorNodeService service = mock(SensorNodeService.class);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new SensorNodeController(service))
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new SensorNodeController(service, mock(Access.class)))
             .setControllerAdvice(new WebErrorHandler()).build();
     private final UUID id = UUID.randomUUID();
 

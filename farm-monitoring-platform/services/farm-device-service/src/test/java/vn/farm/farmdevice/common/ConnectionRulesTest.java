@@ -39,6 +39,22 @@ class ConnectionRulesTest {
                 .hasFieldOrPropertyWithValue("code", "INVALID_ENDPOINT");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"http://localhost:8080", "http://LOCALHOST", "http://127.0.0.1:80", "http://127.1.2.3",
+            "http://0.0.0.0", "http://[::1]:8080", "http://169.254.169.254/latest", "http://metadata.google.internal",
+            "http://api.localhost"})
+    void rejectsLoopbackAndMetadataHosts(String url) {
+        assertThatThrownBy(() -> ConnectionRules.check(ConnectionType.HTTP, url))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "INVALID_ENDPOINT");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"http://192.168.1.50", "http://10.0.0.7:8080", "http://172.16.5.4", "http://esp32-node1.local"})
+    void allowsLanAddresses(String url) {
+        assertThatCode(() -> ConnectionRules.check(ConnectionType.HTTP, url)).doesNotThrowAnyException();
+    }
+
     @Test
     void rejectsTcpWithoutPortAndTooLong() {
         assertThatThrownBy(() -> ConnectionRules.check(ConnectionType.TCP, "tcp://10.0.0.5"))
