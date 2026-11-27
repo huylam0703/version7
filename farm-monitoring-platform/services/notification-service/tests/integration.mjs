@@ -224,6 +224,17 @@ async function verifyNotificationApi(app) {
 
   assert.equal((await api(app, '/me', 'GET', '')).status, 401);
   assert.equal((await api(app, '', 'POST', owner, payload)).status, 403);
+  const serviceToken = jwt(ownerId, 'SERVICE');
+  const notificationRoute = `/${randomUUID()}`;
+  for (const [method, route] of [
+    ['GET', '/me'],
+    ['GET', '/unread-count'],
+    ['PATCH', `${notificationRoute}/read`],
+    ['PATCH', '/read-all'],
+    ['DELETE', notificationRoute],
+  ]) {
+    assert.equal((await api(app, route, method, serviceToken)).status, 403);
+  }
   for (const invalid of [
     { userId: '00000000-0000-0000-0000-000000000000' },
     { title: ' '.repeat(5) },
@@ -308,7 +319,7 @@ try {
     try { return (await rabbit(`queues/${vhost}/${queue}`)).consumers === 1; } catch { return false; }
   }, 'RabbitMQ consumer');
   await verifyNotificationApi(app);
-  console.log('PASS six REST endpoints, validation, ownership and SQL Server persistence');
+  console.log('PASS six REST endpoints, role restrictions, ownership and SQL Server persistence');
   const sample = event();
   await publish(sample);
   await waitFor(() => emailSent(sample.eventId), 'event and SMTP delivery');

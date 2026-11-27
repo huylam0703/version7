@@ -13,6 +13,8 @@ namespace NotificationService.Api.Controllers;
 [Authorize]
 public class NotificationsController : ControllerBase
 {
+    private const string InboxRoles = "ADMIN,OPERATOR";
+
     private readonly INotificationReadService _readService;
     private readonly INotificationService _writeService;
 
@@ -52,6 +54,7 @@ public class NotificationsController : ControllerBase
 
     // 2. Lấy danh sách thông báo của người dùng
     [HttpGet("me")]
+    [Authorize(Roles = InboxRoles)]
     public async Task<ActionResult<IEnumerable<NotificationDto>>> GetMyNotifications(
         CancellationToken cancellationToken)
     {
@@ -77,6 +80,7 @@ public class NotificationsController : ControllerBase
 
     // 3. Đếm số thông báo chưa đọc
     [HttpGet("unread-count")]
+    [Authorize(Roles = InboxRoles)]
     public async Task<IActionResult> GetUnreadCount(
         CancellationToken cancellationToken)
     {
@@ -126,6 +130,7 @@ public class NotificationsController : ControllerBase
 
     // 5. Đánh dấu một thông báo đã đọc
     [HttpPatch("{id:guid}/read")]
+    [Authorize(Roles = InboxRoles)]
     public async Task<IActionResult> MarkAsRead(
         Guid id,
         CancellationToken cancellationToken)
@@ -146,6 +151,7 @@ public class NotificationsController : ControllerBase
 
     // 6. Đánh dấu tất cả thông báo đã đọc
     [HttpPatch("read-all")]
+    [Authorize(Roles = InboxRoles)]
     public async Task<IActionResult> MarkAllAsRead(
         CancellationToken cancellationToken)
     {
@@ -166,6 +172,7 @@ public class NotificationsController : ControllerBase
 
     // 7. Xóa một thông báo
     [HttpDelete("{id:guid}")]
+    [Authorize(Roles = InboxRoles)]
     public async Task<IActionResult> DeleteNotification(
         Guid id,
         CancellationToken cancellationToken)
