@@ -14,7 +14,6 @@ import uav_gateway_simulator.exception.MissionCancelledException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -42,8 +41,6 @@ public class WaypointSensorCollectionService {
         for (UUID nodeId : nodeIds) {
             cancellationService.checkNotCancelled(missionId);
             leaseRegistry.getForWrite(executionId);
-
-            int uploadedCount = 0;
 
             try {
                 // 1. Read real ESP32 data
@@ -73,49 +70,23 @@ public class WaypointSensorCollectionService {
                     );
                 }
 
-                // 3. Upload readings to Sensor Data Service
-                for (SensorReadingRequest reading : readings) {
-                    cancellationService.checkNotCancelled(missionId);
-                    leaseRegistry.getForWrite(executionId);
+                leaseRegistry.getForWrite(executionId);
+                var delivery = sensorCollectionService.collectAndSend(readings);
 
-                    Map<String, Object> response =
-                            sensorCollectionService.collectAndSend(reading);
-
-                    String status = String.valueOf(
-                            response.get("status")
-                    );
-
-                    if (!"VALID".equals(status)
-                            && !"DUPLICATE".equals(status)) {
-                        throw new IllegalStateException(
-                                "Sensor upload rejected: " + status
-                        );
-                    }
-
-                    uploadedCount++;
-
-                    log.info(
-                            "Sensor reading accepted: nodeId={}, type={}, status={}",
-                            nodeId,
-                            reading.sensorType(),
-                            status
-                    );
-                }
-
-                // 4. Mark SUCCESS only after all uploads
                 results.add(new MissionNodeProgressRequest(
                         nodeId,
                         "SUCCESS",
-                        uploadedCount,
+                        readings.size(),
                         1,
                         Instant.now()
                 ));
 
                 log.info(
-                        "ESP32 upload completed: waypointSeq={}, nodeId={}, recordsCount={}",
+                        "ESP32 collection completed: waypointSeq={}, nodeId={}, recordsCount={}, delivery={}",
                         waypoint.seq(),
                         nodeId,
-                        uploadedCount
+                        readings.size(),
+                        delivery
                 );
 
             } catch (MissionCancelledException e) {
@@ -128,10 +99,9 @@ public class WaypointSensorCollectionService {
                 leaseRegistry.getForWrite(executionId);
 
                 log.warn(
-                        "ESP32 collection/upload failed: waypointSeq={}, nodeId={}, acceptedReadings={}, error={}",
+                        "ESP32 collection/upload failed: waypointSeq={}, nodeId={}, error={}",
                         waypoint.seq(),
                         nodeId,
-                        uploadedCount,
                         e.getMessage()
                 );
 

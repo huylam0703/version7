@@ -28,6 +28,10 @@ integration:
 
 simulator:
   id: uav-simulator-01
+  sensor-sync:
+    # Use a persistent directory unique to each running Gateway instance.
+    directory: ${SENSOR_OUTBOX_DIRECTORY:${user.home}/.farm-monitoring/uav-gateway-simulator/${simulator.id}/sensor-outbox}
+    retry-delay-ms: ${SENSOR_SYNC_RETRY_DELAY_MS:5000}
   mission:
     enabled: true
   results:

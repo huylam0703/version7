@@ -1,23 +1,44 @@
-
 package uav_gateway_simulator.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import uav_gateway_simulator.client.Esp32Client;
 import uav_gateway_simulator.client.SensorDataClient;
+import uav_gateway_simulator.client.SensorDataClient.SyncItem;
+import uav_gateway_simulator.client.SensorDataClient.SyncResponse;
+import uav_gateway_simulator.config.SensorSyncConfig;
 import uav_gateway_simulator.dto.request.SensorReadingRequest;
+import uav_gateway_simulator.dto.response.WaypointResponse;
 
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static uav_gateway_simulator.service.SensorCollectionService.Delivery.QUEUED;
+import static uav_gateway_simulator.service.SensorCollectionService.Delivery.SYNCHRONIZED;
 
 @ExtendWith(MockitoExtension.class)
 class SensorCollectionServiceTest {
@@ -25,239 +46,179 @@ class SensorCollectionServiceTest {
     @Mock
     private SensorDataClient sensorDataClient;
 
+    @TempDir
+    private Path directory;
+
+    private final ObjectMapper mapper = new JsonMapper();
+    private SensorReadingOutbox outbox;
     private SensorCollectionService service;
-    private SensorReadingRequest reading;
+    private List<SensorReadingRequest> batch;
 
     @BeforeEach
     void setUp() {
-        service = new SensorCollectionService(sensorDataClient);
-
-        LocalDateTime now = LocalDateTime.now();
-
-        reading = new SensorReadingRequest(
-                "44444444-4444-4444-8444-444444444444",
-                "TEMPERATURE",
-                28.5,
-                now,
-                now,
-                10.762622,
-                106.660172
-        );
+        outbox = new SensorReadingOutbox(directory.toString(), mapper);
+        service = new SensorCollectionService(sensorDataClient, outbox);
+        var time = LocalDateTime.parse("2026-11-28T03:00:00.123");
+        batch = List.of(new SensorReadingRequest("node-1", "WATER_LEVEL", 1000d,
+                time, time.plusSeconds(1), 10.03, 105.78, "ADC_COUNT", "ADC_RAW", 12));
     }
 
     @Test
-    void shouldCollectAndSendReading() {
-        Map<String, Object> expected = Map.of(
-                "status", "VALID",
-                "message", "Sensor reading saved",
-                "id", 1
-        );
+    void persistsBatchBeforeUploadingAndRemovesItAfterAcknowledgment() throws IOException {
+        when(sensorDataClient.sendBatch(batch)).thenAnswer(invocation -> {
+            assertEquals(1, countFiles(".json"));
+            return valid();
+        });
 
-        when(sensorDataClient.sendReading(reading))
-                .thenReturn(expected);
-
-        Map<String, Object> result =
-                service.collectAndSend(reading);
-
-        assertEquals("VALID", result.get("status"));
-        assertEquals(1, result.get("id"));
-
-        verify(sensorDataClient, times(1))
-                .sendReading(reading);
+        assertEquals(SYNCHRONIZED, service.collectAndSend(batch));
+        assertEquals(0, countFiles(".json"));
+        verify(sensorDataClient).sendBatch(batch);
     }
 
     @Test
-    void shouldRejectNullReading() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.collectAndSend(null)
-        );
+    void rejectsInvalidInputBeforeWritingOrSending() throws IOException {
+        assertThrows(IllegalArgumentException.class, () -> service.collectAndSend(null));
+        assertThrows(IllegalArgumentException.class, () -> service.collectAndSend(List.of()));
+        assertThrows(IllegalArgumentException.class, () -> service.collectAndSend(Arrays.asList((SensorReadingRequest) null)));
+        verifyNoInteractions(sensorDataClient);
+        assertEquals(0, countFiles(".json"));
+    }
 
+    @Test
+    void refusesToReportSuccessIfDiskWriteFails() throws IOException {
+        Path file = Files.createFile(directory.resolve("not-a-directory"));
+        var unavailable = new SensorReadingOutbox(file.toString(), mapper);
+
+        assertThrows(IllegalStateException.class,
+                () -> new SensorCollectionService(sensorDataClient, unavailable).collectAndSend(batch));
         verifyNoInteractions(sensorDataClient);
     }
 
     @Test
-    void shouldRejectMissingNodeId() {
-        LocalDateTime now = LocalDateTime.now();
+    void retriesTransientHttpErrorsAndAcceptsDuplicates() throws IOException {
+        when(sensorDataClient.sendBatch(batch))
+                .thenThrow(new HttpServerErrorException(HttpStatus.SERVICE_UNAVAILABLE))
+                .thenThrow(new HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS))
+                .thenReturn(duplicate());
 
-        SensorReadingRequest invalid = new SensorReadingRequest(
-                "",
-                "TEMPERATURE",
-                28.5,
-                now,
-                now,
-                10.762622,
-                106.660172
-        );
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.collectAndSend(invalid)
-        );
-
-        verifyNoInteractions(sensorDataClient);
+        assertEquals(SYNCHRONIZED, service.collectAndSend(batch));
+        verify(sensorDataClient, times(3)).sendBatch(batch);
+        assertEquals(0, countFiles(".json"));
     }
 
     @Test
-    void shouldAcceptDuplicateWithoutRetry() {
-        when(sensorDataClient.sendReading(reading))
-                .thenReturn(Map.of(
-                        "status", "DUPLICATE",
-                        "message", "Sensor reading already exists"
-                ));
+    void automaticallyReplaysAfterRestartAndPreservesOriginalPayload() throws IOException {
+        when(sensorDataClient.sendBatch(batch)).thenThrow(new ResourceAccessException("Connection refused"));
+        assertEquals(QUEUED, service.collectAndSend(batch));
+        verify(sensorDataClient, times(3)).sendBatch(batch);
+        assertEquals(1, countFiles(".json"));
 
-        Map<String, Object> result =
-                service.collectAndSend(reading);
+        var recoveredClient = mock(SensorDataClient.class);
+        when(recoveredClient.sendBatch(batch)).thenReturn(duplicate());
+        try (var restarted = new AnnotationConfigApplicationContext()) {
+            restarted.getEnvironment().getPropertySources().addFirst(new MapPropertySource("sensor-test", Map.of(
+                    "simulator.sensor-sync.directory", directory.toString(),
+                    "simulator.sensor-sync.retry-delay-ms", "25"
+            )));
+            restarted.registerBean(SensorDataClient.class, () -> recoveredClient);
+            restarted.registerBean(ObjectMapper.class, () -> new JsonMapper());
+            restarted.register(SensorSyncConfig.class, EnableTestScheduling.class,
+                    SensorReadingOutbox.class, SensorCollectionService.class);
+            restarted.refresh();
 
-        assertEquals("DUPLICATE", result.get("status"));
-
-        verify(sensorDataClient, times(1))
-                .sendReading(reading);
+            await().atMost(5, SECONDS).until(() -> countFiles(".json") == 0);
+            verify(recoveredClient).sendBatch(batch);
+        }
     }
 
     @Test
-    void shouldRejectInvalidWithoutRetry() {
-        when(sensorDataClient.sendReading(reading))
-                .thenReturn(Map.of("status", "INVALID"));
+    void retriesIncompleteAcknowledgmentAndRetainsTheBatch() throws IOException {
+        var second = new SensorReadingRequest("node-1", "SOIL_MOISTURE", 2425d,
+                batch.getFirst().measuredAt(), batch.getFirst().collectedAt(), 10.03, 105.78,
+                "ADC_COUNT", "ADC_RAW", 12);
+        var readings = List.of(batch.getFirst(), second);
+        var firstItem = new SyncItem(0, "VALID", 1L);
+        when(sensorDataClient.sendBatch(readings)).thenReturn(new SyncResponse(2, 2, 0, 0, List.of(firstItem, firstItem)));
 
-        IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                () -> service.collectAndSend(reading)
-        );
-
-        assertTrue(exception.getMessage().contains("INVALID"));
-
-        verify(sensorDataClient, times(1))
-                .sendReading(reading);
+        assertEquals(QUEUED, service.collectAndSend(readings));
+        verify(sensorDataClient, times(3)).sendBatch(readings);
+        assertEquals(1, countFiles(".json"));
     }
 
     @Test
-    void shouldRetryOnHttp500AndEventuallySucceed() {
-        when(sensorDataClient.sendReading(reading))
-                .thenThrow(new HttpServerErrorException(
-                        HttpStatus.INTERNAL_SERVER_ERROR
-                ))
-                .thenReturn(Map.of("status", "VALID"));
+    void quarantinesMalformedPayloadAndContinuesSendingOtherBatches() throws IOException {
+        when(sensorDataClient.sendBatch(batch))
+                .thenThrow(new HttpClientErrorException(HttpStatus.BAD_REQUEST))
+                .thenReturn(valid());
 
-        Map<String, Object> result =
-                service.collectAndSend(reading);
+        assertThrows(HttpClientErrorException.class, () -> service.collectAndSend(batch));
+        assertEquals(0, countFiles(".json"));
+        assertEquals(1, countFiles(".rejected"));
+        verify(sensorDataClient).sendBatch(batch);
 
-        assertEquals("VALID", result.get("status"));
-
-        verify(sensorDataClient, times(2))
-                .sendReading(reading);
+        Files.writeString(directory.resolve("corrupt.json"), "{");
+        outbox.release(outbox.saveAndClaim(batch));
+        service.retryPending();
+        assertEquals(0, countFiles(".json"));
+        assertEquals(2, countFiles(".rejected"));
     }
 
     @Test
-    void shouldRetryOnHttp503AndEventuallySucceed() {
-        when(sensorDataClient.sendReading(reading))
-                .thenThrow(new HttpServerErrorException(
-                        HttpStatus.SERVICE_UNAVAILABLE
-                ))
-                .thenThrow(new HttpServerErrorException(
-                        HttpStatus.SERVICE_UNAVAILABLE
-                ))
-                .thenReturn(Map.of("status", "VALID"));
+    void doesNotRetryAnInvalidReadingAlreadyStoredBySensorData() throws IOException {
+        when(sensorDataClient.sendBatch(batch))
+                .thenReturn(new SyncResponse(1, 0, 1, 0, List.of(new SyncItem(0, "INVALID", 1L))));
 
-        Map<String, Object> result =
-                service.collectAndSend(reading);
-
-        assertEquals("VALID", result.get("status"));
-
-        verify(sensorDataClient, times(3))
-                .sendReading(reading);
+        var error = assertThrows(IllegalStateException.class, () -> service.collectAndSend(batch));
+        assertTrue(error.getMessage().contains("INVALID"));
+        verify(sensorDataClient).sendBatch(batch);
+        assertEquals(0, countFiles(".json"));
     }
 
     @Test
-    void shouldFailAfterMaxRetries() {
-        when(sensorDataClient.sendReading(reading))
-                .thenThrow(new HttpServerErrorException(
-                        HttpStatus.INTERNAL_SERVER_ERROR
-                ));
+    void savesAllReadingsFromTheEsp32WhenTheServerIsOffline() throws IOException {
+        var esp32 = mock(Esp32Client.class);
+        var nodeId = UUID.randomUUID();
+        var waypoint = new WaypointResponse(UUID.randomUUID(), 1, new BigDecimal("10.03"),
+                new BigDecimal("105.78"), null, null, List.of(nodeId));
+        when(esp32.readByNodeId(nodeId))
+                .thenReturn(mapper.readTree("""
+                        {"node":"NODE_1","waterLevelRaw":0,"soilMoistureRaw":2425}
+                        """));
+        when(sensorDataClient.sendBatch(anyList()))
+                .thenThrow(new ResourceAccessException("Connection refused"));
 
-        assertThrows(
-                HttpServerErrorException.class,
-                () -> service.collectAndSend(reading)
-        );
+        var cancellation = mock(MissionCancellationService.class);
+        var missionId = UUID.randomUUID();
+        var collector = new WaypointSensorCollectionService(esp32, new Esp32ReadingMapper(), service,
+                cancellation, mock(RecoveryLeaseRegistry.class));
+        var result = collector.collect(missionId, UUID.randomUUID(), waypoint).getFirst();
 
-        verify(sensorDataClient, times(3))
-                .sendReading(reading);
+        assertEquals("SUCCESS", result.result());
+        assertEquals(2, result.recordsCount());
+        verify(cancellation).checkNotCancelled(missionId);
+        try (var pending = outbox.pending()) {
+            var saved = outbox.read(pending.iterator().next());
+            assertEquals(List.of("WATER_LEVEL", "SOIL_MOISTURE"),
+                    saved.stream().map(SensorReadingRequest::sensorType).toList());
+            assertEquals(0.0, saved.getFirst().sensorValue());
+            assertEquals(saved.getFirst().measuredAt(), saved.getLast().measuredAt());
+        }
     }
 
-    @Test
-    void shouldNotRetryOnHttp400() {
-        when(sensorDataClient.sendReading(reading))
-                .thenThrow(new HttpClientErrorException(
-                        HttpStatus.BAD_REQUEST
-                ));
-
-        assertThrows(
-                HttpClientErrorException.class,
-                () -> service.collectAndSend(reading)
-        );
-
-        verify(sensorDataClient, times(1))
-                .sendReading(reading);
+    private long countFiles(String suffix) throws IOException {
+        try (var files = Files.list(directory)) {
+            return files.filter(path -> path.getFileName().toString().endsWith(suffix)).count();
+        }
     }
 
-    @Test
-    void shouldRetryOnConnectionError() {
-        when(sensorDataClient.sendReading(reading))
-                .thenThrow(new ResourceAccessException(
-                        "Connection refused"
-                ))
-                .thenReturn(Map.of("status", "VALID"));
-
-        Map<String, Object> result =
-                service.collectAndSend(reading);
-
-        assertEquals("VALID", result.get("status"));
-
-        verify(sensorDataClient, times(2))
-                .sendReading(reading);
+    private SyncResponse valid() {
+        return new SyncResponse(1, 1, 0, 0, List.of(new SyncItem(0, "VALID", 1L)));
     }
 
-    @Test
-    void shouldFailWhenConnectionNeverRecovers() {
-        when(sensorDataClient.sendReading(reading))
-                .thenThrow(new ResourceAccessException(
-                        "Connection refused"
-                ));
-
-        assertThrows(
-                ResourceAccessException.class,
-                () -> service.collectAndSend(reading)
-        );
-
-        verify(sensorDataClient, times(3))
-                .sendReading(reading);
+    private SyncResponse duplicate() {
+        return new SyncResponse(1, 0, 0, 1, List.of(new SyncItem(0, "DUPLICATE", null)));
     }
 
-    @Test
-    void shouldRejectNullResponseWithoutRetry() {
-        when(sensorDataClient.sendReading(reading))
-                .thenReturn(null);
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> service.collectAndSend(reading)
-        );
-
-        verify(sensorDataClient, times(1))
-                .sendReading(reading);
-    }
-
-    @Test
-    void shouldRejectUnexpectedStatusWithoutRetry() {
-        when(sensorDataClient.sendReading(reading))
-                .thenReturn(Map.of("status", "UNKNOWN"));
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> service.collectAndSend(reading)
-        );
-
-        verify(sensorDataClient, times(1))
-                .sendReading(reading);
-    }
+    @EnableScheduling
+    static class EnableTestScheduling {}
 }
