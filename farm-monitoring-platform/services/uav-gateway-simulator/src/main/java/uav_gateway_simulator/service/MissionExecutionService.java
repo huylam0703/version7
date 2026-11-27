@@ -12,6 +12,8 @@ import uav_gateway_simulator.dto.response.MissionResultResponse;
 import uav_gateway_simulator.dto.response.WaypointResponse;
 import uav_gateway_simulator.exception.MissionCancelledException;
 import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
+import uav_gateway_simulator.telemetry.FlightOwnershipService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.time.Instant;
 import java.util.*;
@@ -29,6 +31,7 @@ public class MissionExecutionService {
     private final MissionResumePlanner missionResumePlanner;
     private final MissionRecoveryLeaseManager leaseManager;
     private final MissionCancellationService cancellationService;
+    private final FlightOwnershipService flightOwnershipService;
 
     public void prepareMission(MissionReadyPayload payload) {
 
@@ -48,6 +51,16 @@ public class MissionExecutionService {
 
         UUID missionId = payload.getMissionId();
         UUID executionId = payload.getExecutionId();
+
+        FlightOwnershipToken ownershipToken =
+                flightOwnershipService.capture(executionId);
+
+        if (ownershipToken.isRecovery()) {
+            throw new RecoveryOwnershipLostException(
+                    "Normal mission cannot use recovery ownership: "
+                            + executionId
+            );
+        }
 
 
         // 2. Check ACK deadline
@@ -117,6 +130,7 @@ public class MissionExecutionService {
                     "Mission contains invalid node IDs"
             );
         }
+        validateNodeAssignments(mission);
 
         log.info(
                 "Mission validated successfully: missionId={}, executionId={}, waypoints={}, nodes={}",
@@ -180,7 +194,14 @@ public class MissionExecutionService {
         try {
 
             // 10. Start Heartbeat
-            heartbeatScheduler.start(missionId, executionId);
+            // 10. Start Heartbeat with worker ownership
+            flightOwnershipService.validate(ownershipToken);
+
+            heartbeatScheduler.start(
+                    missionId,
+                    executionId,
+                    ownershipToken
+            );
 
             log.info(
                     "Heartbeat started: missionId={}, executionId={}",
@@ -195,11 +216,16 @@ public class MissionExecutionService {
                     executionId
             );
 
+            flightOwnershipService.validate(ownershipToken);
+
             waypointSimulationService.simulate(
                     missionId,
                     executionId,
-                    mission.waypoints()
+                    mission.waypoints(),
+                    ownershipToken
             );
+
+            flightOwnershipService.validate(ownershipToken);
 
             log.info(
                     "Waypoint simulation completed: missionId={}, executionId={}",
@@ -231,12 +257,17 @@ public class MissionExecutionService {
 
                 cancellationService.checkNotCancelled(missionId);
 
+                flightOwnershipService.validate(ownershipToken);
+
                 MissionResultResponse resultResponse =
                         missionResultSimulationService.simulateResults(
                                 missionId,
                                 executionId,
-                                nodeIds
+                                nodeIds,
+                                ownershipToken
                         );
+
+                flightOwnershipService.validate(ownershipToken);
 
                 // 14. Validate Results response
                 if (resultResponse == null) {
@@ -314,7 +345,7 @@ public class MissionExecutionService {
         } finally {
 
             // 15. Always stop Heartbeat
-            heartbeatScheduler.stop(executionId);
+            heartbeatScheduler.stop(ownershipToken);
 
             log.info(
                     "Heartbeat stopped: missionId={}, executionId={}",
@@ -341,6 +372,15 @@ public class MissionExecutionService {
         UUID executionId = payload.getExecutionId();
 
         leaseManager.requireValidLease(executionId);
+        FlightOwnershipToken ownershipToken =
+                flightOwnershipService.capture(executionId);
+
+        if (!ownershipToken.isRecovery()) {
+            throw new RecoveryOwnershipLostException(
+                    "Recovery ownership is required: "
+                            + executionId
+            );
+        }
 
         MissionResumePlan plan =
                 missionResumePlanner.createPlan(missionId, executionId);
@@ -364,10 +404,17 @@ public class MissionExecutionService {
                     "Invalid mission detail for resume"
             );
         }
+        validateNodeAssignments(mission);
 
         // Resume must not send ACK again.
         try {
-            heartbeatScheduler.start(missionId, executionId);
+            flightOwnershipService.validate(ownershipToken);
+
+            heartbeatScheduler.start(
+                    missionId,
+                    executionId,
+                    ownershipToken
+            );
 
 
             MissionResumePlan latestPlan =
@@ -435,12 +482,17 @@ public class MissionExecutionService {
                 );
             }
 
+            flightOwnershipService.validate(ownershipToken);
+
             waypointSimulationService.simulateResume(
                     missionId,
                     executionId,
                     sortedWaypoints,
-                    latestPlan
+                    latestPlan,
+                    ownershipToken
             );
+
+            flightOwnershipService.validate(ownershipToken);
 
             // Waypoints completed. Recovery ownership must still be valid.
             leaseManager.requireValidLease(executionId);
@@ -449,12 +501,17 @@ public class MissionExecutionService {
 
             try {
                 cancellationService.checkNotCancelled(missionId);
+                flightOwnershipService.validate(ownershipToken);
+
                 MissionResultResponse resultResponse =
                         missionResultSimulationService.simulateResults(
                                 missionId,
                                 executionId,
-                                mission.nodeIds()
+                                mission.nodeIds(),
+                                ownershipToken
                         );
+
+                flightOwnershipService.validate(ownershipToken);
 
                 if (resultResponse == null
                         || !Objects.equals(resultResponse.missionId(), missionId)
@@ -504,8 +561,71 @@ public class MissionExecutionService {
             }
 
         } finally {
-            heartbeatScheduler.stop(executionId);
+            heartbeatScheduler.stop(ownershipToken);
         }
+    }
+
+    private void validateNodeAssignments(
+            MissionDetailResponse mission
+    ) {
+        Set<UUID> missionNodeIds =
+                new HashSet<>(mission.nodeIds());
+
+        Set<UUID> assignedNodeIds = new HashSet<>();
+
+        for (WaypointResponse waypoint : mission.waypoints()) {
+
+            if (waypoint == null) {
+                throw new IllegalStateException(
+                        "Mission contains invalid waypoint"
+                );
+            }
+
+            if (waypoint.nodeIds() == null) {
+                throw new IllegalStateException(
+                        "Waypoint nodeIds must not be null"
+                );
+            }
+
+            for (UUID nodeId : waypoint.nodeIds()) {
+
+                if (nodeId == null
+                        || !missionNodeIds.contains(nodeId)) {
+
+                    throw new IllegalStateException(
+                            "Node does not belong to mission: "
+                                    + nodeId
+                    );
+                }
+
+                if (!assignedNodeIds.add(nodeId)) {
+
+                    throw new IllegalStateException(
+                            "Duplicate node assignment: "
+                                    + nodeId
+                    );
+                }
+            }
+        }
+
+        if (!assignedNodeIds.equals(missionNodeIds)) {
+
+            Set<UUID> unassignedNodes =
+                    new HashSet<>(missionNodeIds);
+
+            unassignedNodes.removeAll(assignedNodeIds);
+
+            throw new IllegalStateException(
+                    "Mission contains unassigned nodes: "
+                            + unassignedNodes
+            );
+        }
+
+        log.info(
+                "Node assignments validated: missionId={}, nodes={}",
+                mission.missionId(),
+                assignedNodeIds.size()
+        );
     }
 
 }

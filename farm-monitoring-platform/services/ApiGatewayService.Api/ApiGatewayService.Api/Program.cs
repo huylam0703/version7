@@ -24,12 +24,20 @@ if (!authEnabled && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Gateway:Auth:Enabled=false chỉ dùng ở Development");
 
 // authenticated
+
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("authenticated", policy =>
     {
-        if (authEnabled) policy.RequireAuthenticatedUser();
-        else policy.RequireAssertion(_ => true);
+        if (authEnabled)
+            policy.RequireAuthenticatedUser();
+        else
+            policy.RequireAssertion(_ => true);
+    })
+    .AddPolicy("uav-telemetry", policy =>
+    {
+        policy.RequireAuthenticatedUser();
     });
+
 
 // CORS cho front-end chạy ở địa chỉ khác
 var origins = gateway.GetSection("Cors:Origins").Get<string[]>() ?? [];

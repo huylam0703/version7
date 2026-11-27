@@ -11,6 +11,8 @@ import uav_gateway_simulator.dto.response.MissionDetailResponse;
 import uav_gateway_simulator.dto.response.MissionResultResponse;
 import uav_gateway_simulator.dto.response.WaypointResponse;
 import uav_gateway_simulator.exception.MissionCancelledException;
+import uav_gateway_simulator.telemetry.FlightOwnershipService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -55,6 +57,8 @@ class MissionExecutionServiceTest {
         leaseManager = mock(MissionRecoveryLeaseManager.class);
         MissionCancellationService cancellationService =
                 mock(MissionCancellationService.class);
+        RecoveryLeaseRegistry leaseRegistry =
+                new RecoveryLeaseRegistry();
 
         missionExecutionService = new MissionExecutionService(
                 missionClient,
@@ -64,7 +68,8 @@ class MissionExecutionServiceTest {
                 executionTracker,
                 missionResumePlanner,
                 leaseManager,
-                cancellationService
+                cancellationService,
+                new FlightOwnershipService(leaseRegistry)
         );
 
         missionId = UUID.randomUUID();
@@ -134,9 +139,12 @@ class MissionExecutionServiceTest {
 
     private void stubSuccessfulResults() {
         when(missionResultSimulationService.simulateResults(
-                missionId,
-                executionId,
-                List.of(nodeId)
+                eq(missionId),
+                eq(executionId),
+                eq(List.of(nodeId)),
+                eq(new FlightOwnershipToken(
+                        executionId, null, null
+                ))
         )).thenReturn(
                 new MissionResultResponse(
                         missionId,
@@ -172,24 +180,34 @@ class MissionExecutionServiceTest {
                 .ackMission(missionId, executionId);
 
         inOrder.verify(heartbeatScheduler)
-                .start(missionId, executionId);
+                .start(
+                        eq(missionId),
+                        eq(executionId),
+                        any(FlightOwnershipToken.class)
+                );
 
         inOrder.verify(waypointSimulationService)
                 .simulate(
-                        missionId,
-                        executionId,
-                        mission.waypoints()
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
                 );
 
         inOrder.verify(missionResultSimulationService)
                 .simulateResults(
-                        missionId,
-                        executionId,
-                        List.of(nodeId)
+                        eq(missionId),
+                        eq(executionId),
+                        eq(List.of(nodeId)),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
                 );
 
         inOrder.verify(heartbeatScheduler)
-                .stop(executionId);
+                .stop(any(FlightOwnershipToken.class));
 
         inOrder.verifyNoMoreInteractions();
     }
@@ -202,9 +220,12 @@ class MissionExecutionServiceTest {
                 "Waypoint simulation failed"
         )).when(waypointSimulationService)
                 .simulate(
-                        missionId,
-                        executionId,
-                        mission.waypoints()
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
                 );
 
         IllegalStateException exception = assertThrows(
@@ -220,7 +241,7 @@ class MissionExecutionServiceTest {
         verifyNoInteractions(missionResultSimulationService);
 
         verify(heartbeatScheduler)
-                .stop(executionId);
+                .stop(any(FlightOwnershipToken.class));
     }
 
     @Test
@@ -228,9 +249,12 @@ class MissionExecutionServiceTest {
         stubSuccessfulAck();
 
         when(missionResultSimulationService.simulateResults(
-                missionId,
-                executionId,
-                List.of(nodeId)
+                eq(missionId),
+                eq(executionId),
+                eq(List.of(nodeId)),
+                eq(new FlightOwnershipToken(
+                        executionId, null, null
+                ))
         )).thenThrow(
                 new IllegalStateException(
                         "Mission Results failed"
@@ -249,13 +273,16 @@ class MissionExecutionServiceTest {
 
         verify(waypointSimulationService)
                 .simulate(
-                        missionId,
-                        executionId,
-                        mission.waypoints()
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
                 );
 
         verify(heartbeatScheduler)
-                .stop(executionId);
+                .stop(any(FlightOwnershipToken.class));
     }
 
     @Test
@@ -308,9 +335,12 @@ class MissionExecutionServiceTest {
         stubSuccessfulAck();
 
         when(missionResultSimulationService.simulateResults(
-                missionId,
-                executionId,
-                List.of(nodeId)
+                eq(missionId),
+                eq(executionId),
+                eq(List.of(nodeId)),
+                eq(new FlightOwnershipToken(
+                        executionId, null, null
+                ))
         )).thenReturn(
                 new MissionResultResponse(
                         missionId,
@@ -339,7 +369,7 @@ class MissionExecutionServiceTest {
         );
 
         verify(heartbeatScheduler)
-                .stop(executionId);
+                .stop(any(FlightOwnershipToken.class));
     }
 
 
@@ -378,13 +408,18 @@ class MissionExecutionServiceTest {
 
         verify(missionResultSimulationService, times(1))
                 .simulateResults(
-                        missionId,
-                        executionId,
-                        List.of(nodeId)
+                        eq(missionId),
+                        eq(executionId),
+                        eq(List.of(nodeId)),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
                 );
 
         verify(heartbeatScheduler, times(1))
-                .stop(executionId);
+                .stop(eq(new FlightOwnershipToken(
+                        executionId, null, null
+                )));
     }
 
 
@@ -393,9 +428,12 @@ class MissionExecutionServiceTest {
         stubSuccessfulAck();
 
         when(missionResultSimulationService.simulateResults(
-                missionId,
-                executionId,
-                List.of(nodeId)
+                eq(missionId),
+                eq(executionId),
+                eq(List.of(nodeId)),
+                eq(new FlightOwnershipToken(
+                        executionId, null, null
+                ))
         )).thenThrow(
                 new IllegalStateException(
                         "Simulated Results failure"
@@ -419,13 +457,18 @@ class MissionExecutionServiceTest {
 
         verify(waypointSimulationService, times(1))
                 .simulate(
-                        missionId,
-                        executionId,
-                        mission.waypoints()
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
                 );
 
         verify(heartbeatScheduler, times(1))
-                .stop(executionId);
+                .stop(eq(new FlightOwnershipToken(
+                        executionId, null, null
+                )));
     }
     @Test
     void shouldStopHeartbeatAndSkipResultsWhenMissionCancelled() {
@@ -434,9 +477,12 @@ class MissionExecutionServiceTest {
         doThrow(new MissionCancelledException("Mission cancelled"))
                 .when(waypointSimulationService)
                 .simulate(
-                        missionId,
-                        executionId,
-                        mission.waypoints()
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
                 );
 
         assertThrows(
@@ -445,10 +491,14 @@ class MissionExecutionServiceTest {
         );
 
         verify(heartbeatScheduler)
-                .start(missionId, executionId);
+                .start(
+                        eq(missionId),
+                        eq(executionId),
+                        any(FlightOwnershipToken.class)
+                );
 
         verify(heartbeatScheduler)
-                .stop(executionId);
+                .stop(any(FlightOwnershipToken.class));
 
         verifyNoInteractions(missionResultSimulationService);
 

@@ -9,6 +9,7 @@ import uav_gateway_simulator.dto.MissionReadyPayload;
 import uav_gateway_simulator.dto.request.MissionResultRequest;
 import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
 import uav_gateway_simulator.service.*;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
 
 import java.time.Instant;
 import java.util.List;
@@ -38,6 +39,8 @@ class MissionProcessingIntegrationTest {
         executor = Executors.newSingleThreadExecutor();
         MissionCancellationService cancellationService =
                 mock(MissionCancellationService.class);
+        FlightLifecycleService flightLifecycleService =
+                mock(FlightLifecycleService.class);
 
         processingService = new MissionProcessingService(
                 executionService,
@@ -49,7 +52,8 @@ class MissionProcessingIntegrationTest {
                 mock(MissionClient.class),
                 mock(MissionRecoveryLeaseManager.class),
                 mock(SimulatorInstanceIdentity.class),
-                new RecoveryLeaseRegistry()
+                new RecoveryLeaseRegistry(),
+                flightLifecycleService
         );
     }
 

@@ -1,5 +1,5 @@
 server:
-  port: 8085
+  port: 8087
 
 spring:
   application:
@@ -11,6 +11,15 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+          issuer-uri: ${AUTH_JWT_ISSUER:farm-auth}
+          audiences:
+            - ${AUTH_JWT_AUDIENCE:farm-api}
 
 integration:
   mission:
@@ -42,3 +51,12 @@ simulator:
     waypoint-delay-ms: 15000
   heartbeat:
     interval-ms: 10000
+    failure-threshold: 3
+
+  telemetry:
+    enabled: ${UAV_TELEMETRY_ENABLED:true}
+    update-interval-ms: ${UAV_TELEMETRY_UPDATE_INTERVAL_MS:1000}
+    battery-drain-per-second: ${UAV_TELEMETRY_BATTERY_DRAIN:0.02}
+    initial-battery-percent: ${UAV_TELEMETRY_INITIAL_BATTERY:100.0}
+    sse-publish-interval-ms: ${UAV_TELEMETRY_SSE_INTERVAL_MS:1000}
+    sse-timeout-ms: ${UAV_TELEMETRY_SSE_TIMEOUT_MS:0}

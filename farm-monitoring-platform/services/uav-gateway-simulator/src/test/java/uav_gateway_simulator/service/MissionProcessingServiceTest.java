@@ -11,6 +11,8 @@ import uav_gateway_simulator.dto.request.MissionResultRequest;
 import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
 import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 import uav_gateway_simulator.exception.MissionCancelledException;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.time.Instant;
 import java.util.List;
@@ -53,6 +55,8 @@ class MissionProcessingServiceTest {
         leaseManager = mock(MissionRecoveryLeaseManager.class);
         instanceIdentity = mock(SimulatorInstanceIdentity.class);
         leaseRegistry = new RecoveryLeaseRegistry();
+        FlightLifecycleService flightLifecycleService =
+                mock(FlightLifecycleService.class);
 
         payloadStore = new MissionResultPayloadStore();
 
@@ -66,7 +70,8 @@ class MissionProcessingServiceTest {
                 missionClient,
                 leaseManager,
                 instanceIdentity,
-                leaseRegistry
+                leaseRegistry,
+                flightLifecycleService
         );
     }
 
@@ -342,8 +347,14 @@ class MissionProcessingServiceTest {
         executor.submit(() -> {})
                 .get(5, TimeUnit.SECONDS);
 
-        verify(retryScheduler, times(1))
-                .schedule(executionId);
+        verify(retryScheduler).schedule(
+                executionId,
+                new FlightOwnershipToken(
+                        executionId,
+                        null,
+                        null
+                )
+        );
 
         assertEquals(
                 MissionExecutionTracker.Status.RESULTS_RETRY,
@@ -478,6 +489,24 @@ class MissionProcessingServiceTest {
                 executionId,
                 instanceId
         )).thenReturn(claim);
+        FlightOwnershipToken ownershipToken =
+                new FlightOwnershipToken(
+                        executionId,
+                        instanceId,
+                        claim.recoveryGeneration()
+                );
+
+        doAnswer(invocation -> {
+            leaseRegistry.register(claim);
+            return null;
+        }).when(leaseManager).register(claim);
+
+        when(leaseManager.removeIfCurrent(ownershipToken))
+                .thenAnswer(invocation ->
+                        leaseRegistry.removeAfterCompletionIfCurrent(
+                                ownershipToken
+                        )
+                );
 
         // Mission bị hủy trong quá trình Resume.
         doThrow(new MissionCancelledException("Mission cancelled"))
@@ -496,7 +525,12 @@ class MissionProcessingServiceTest {
         );
 
         verify(leaseManager).register(claim);
-        verify(leaseManager).remove(executionId);
+        verify(leaseManager)
+                .removeIfCurrent(ownershipToken);
+
+        assertTrue(
+                leaseRegistry.activeExecutionIds().isEmpty()
+        );
 
         verify(executionService).resumeMission(payload);
 

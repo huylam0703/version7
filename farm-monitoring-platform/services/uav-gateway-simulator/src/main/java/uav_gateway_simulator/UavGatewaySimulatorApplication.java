@@ -5,9 +5,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import uav_gateway_simulator.config.AuthProperties;
+import uav_gateway_simulator.config.FlightTelemetryProperties;
 
 @SpringBootApplication
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({
+        AuthProperties.class,
+        FlightTelemetryProperties.class})
 @EnableScheduling
 public class UavGatewaySimulatorApplication {
 
