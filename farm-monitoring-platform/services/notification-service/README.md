@@ -6,6 +6,14 @@ OpenAPI trong Development tại `/openapi/v1.json`.
 
 ## API web
 
+### Demo cảnh báo vượt ngưỡng
+
+1. Trong môi trường Docker Compose, đặt `NOTIFICATION_ADMIN_ID` thành UUID tài khoản admin. Để thử cả email, đặt `NOTIFICATION_ADMIN_EMAIL`, `NOTIFICATION_EMAIL_ENABLED=true`, `NOTIFICATION_SMTP_HOST` và `NOTIFICATION_SMTP_FROM`. Cấu hình thêm `NOTIFICATION_SMTP_PORT`, `NOTIFICATION_SMTP_SSL`, `NOTIFICATION_SMTP_USERNAME` và `NOTIFICATION_SMTP_PASSWORD` theo máy chủ SMTP. Giữ thông tin đăng nhập ở biến môi trường hoặc file env cục bộ.
+2. Chạy stack với cả `docker-compose.yml` và `docker-compose.infra.yml`. Hai service gửi sự kiện lưu công việc vào database rồi thử lại nếu broker chưa xác nhận.
+3. Đăng nhập admin và lưu ngưỡng ở trang Thresholds. Có thể cấu hình toàn hệ thống hoặc cho một nông trại. Ngưỡng nông trại ưu tiên hơn ngưỡng toàn hệ thống. Số đo thiếu farm ID áp dụng ngưỡng toàn hệ thống.
+4. Dùng [file HTTP](NotificationService.Api/NotificationService.Api.http) qua Gateway để gửi một số đo vật lý hợp lệ với UUID thiết bị. Thử lần lượt giá trị trong ngưỡng, bằng ngưỡng, vượt trên và dưới ngưỡng với thời điểm đo mới cho từng ca. Kiểm tra trang Alerts, trang Notifications và hộp thư admin. Dữ liệu ADC thô và số đo không hợp lệ không được dùng để so ngưỡng.
+5. Chuyển một nhiệm vụ thử sang `FAILED` hoặc `PARTIAL`, rồi kiểm tra cùng tài khoản admin nhận thông báo web và email.
+
 Các endpoint yêu cầu JWT của User Auth. Các thao tác trong hộp thông báo cá nhân
 yêu cầu role `ADMIN` hoặc `OPERATOR` và chỉ áp dụng cho thông báo của người đang
 đăng nhập. Endpoint tạo yêu cầu role `ADMIN` và chỉ tạo thông báo web.
@@ -22,6 +30,10 @@ yêu cầu role `ADMIN` hoặc `OPERATOR` và chỉ áp dụng cho thông báo c
 Gateway công khai đường dẫn `/api/v1/notifications/...` và chuyển tiếp sang
 `/api/notifications/...` của service này.
 
+Gọi lại thao tác đánh dấu đã đọc giữ nguyên `readAt` ban đầu. Thao tác đọc tất cả
+trả về số mục vừa cập nhật. Đánh dấu hoặc xóa ID không có trong hộp thư của người gọi
+trả về `404`.
+
 ## Nhận sự kiện và chống trùng
 
 Exchange `farm.events` loại topic. Queue mặc định `notification.events`, durable.
@@ -29,6 +41,8 @@ Hỗ trợ envelope version 1 trong `contracts/events`, gồm `eventId`, `eventT
 `version` và `payload`. `eventId` phải là UUID khác rỗng và được giữ nguyên khi gửi lại.
 
 - `alert.created` tạo thông báo từ loại, mức độ và nội dung cảnh báo.
+  Noti cũng nhận mã cảm biến từ bản Alert cũ như `AIR_TEMP`, chuẩn hóa thành
+  `OUT_OF_RANGE` và giữ mã cảm biến trên tiêu đề.
 - `mission.status_changed` tạo thông báo cho trạng thái `FAILED` và `PARTIAL`.
 - `Notifications:MissionSource=Direct` là mặc định để tương thích luồng đã có.
   Noti nhận lỗi Mission trực tiếp và bỏ qua `MISSION_FAILED` hoặc `COLLECTION_FAILED`

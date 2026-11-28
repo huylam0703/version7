@@ -27,6 +27,7 @@ import vn.farm.sensordata.persistence.SensorReadingRepository;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,8 +48,8 @@ class SensorReadingApiTest {
     @BeforeEach
     void setUp() {
         repository = mock(SensorReadingRepository.class, withSettings().mockMaker(MockMakers.PROXY));
-        mvc = MockMvcBuilders.standaloneSetup(new SensorReadingController(new SensorReadingService(repository)))
-                .build();
+        var service = new SensorReadingService(repository, Optional.empty());
+        mvc = MockMvcBuilders.standaloneSetup(new SensorReadingController(service)).build();
     }
 
     @ParameterizedTest

@@ -1,6 +1,74 @@
-@NotificationService.Api_HostAddress = http://localhost:5063
+@gateway = http://localhost:5000
+@token = REPLACE_WITH_ADMIN_JWT
+@adminId = REPLACE_WITH_ADMIN_UUID
+@nodeId = REPLACE_WITH_SENSOR_NODE_UUID
+@notificationId = REPLACE_WITH_NOTIFICATION_UUID
 
-GET {{NotificationService.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Kiểm tra JWT
+GET {{gateway}}/api/v1/notifications/test-auth
+Authorization: Bearer {{token}}
 
-###
+### Lưu ngưỡng nhiệt độ áp dụng cho tất cả nông trại
+PUT {{gateway}}/api/v1/thresholds
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sensorCode": "AIR_TEMP",
+  "minValue": 18,
+  "maxValue": 35,
+  "severity": "HIGH"
+}
+
+### Gửi số đo vượt ngưỡng. Đổi sensorValue thành 35 hoặc 15 để thử biên và dưới ngưỡng.
+POST {{gateway}}/api/v1/readings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nodeId": "{{nodeId}}",
+  "sensorType": "AIR_TEMP",
+  "sensorValue": 39,
+  "unit": "°C",
+  "valueKind": "PHYSICAL",
+  "measuredAt": "{{$datetime iso8601}}",
+  "collectedAt": "{{$datetime iso8601}}",
+  "latitude": 16.05,
+  "longitude": 108.20
+}
+
+### Kiểm tra cảnh báo đã được lưu
+GET {{gateway}}/api/v1/alerts
+Authorization: Bearer {{token}}
+
+### Hộp thông báo
+GET {{gateway}}/api/v1/notifications/me
+Authorization: Bearer {{token}}
+
+### Số thông báo chưa đọc
+GET {{gateway}}/api/v1/notifications/unread-count
+Authorization: Bearer {{token}}
+
+### Tạo thông báo web thủ công
+POST {{gateway}}/api/v1/notifications
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "userId": "{{adminId}}",
+  "title": "Kiểm tra hộp thông báo",
+  "message": "Thông báo web tạo thủ công",
+  "type": "SYSTEM"
+}
+
+### Đánh dấu một thông báo
+PATCH {{gateway}}/api/v1/notifications/{{notificationId}}/read
+Authorization: Bearer {{token}}
+
+### Đánh dấu tất cả
+PATCH {{gateway}}/api/v1/notifications/read-all
+Authorization: Bearer {{token}}
+
+### Xóa thông báo
+DELETE {{gateway}}/api/v1/notifications/{{notificationId}}
+Authorization: Bearer {{token}}

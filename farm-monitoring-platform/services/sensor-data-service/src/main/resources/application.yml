@@ -6,6 +6,16 @@ spring:
   application:
     name: sensor-data-service
 
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
+  sql:
+    init:
+      schema-locations: classpath:reading-alert-outbox.sql
+
   datasource:
     url: jdbc:sqlserver://localhost:1433;databaseName=sensor_data_db;encrypt=true;trustServerCertificate=true
     username: sa
@@ -16,3 +26,7 @@ spring:
       ddl-auto: validate
     open-in-view: false
     show-sql: false
+
+farm:
+  reading-alerts:
+    enabled: ${FARM_READING_ALERTS_ENABLED:false}

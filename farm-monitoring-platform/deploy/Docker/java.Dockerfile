@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 # 2) Service (giữ nguyên cấu trúc thư mục như repo)
 COPY ${SERVICE_PATH} ./${SERVICE_PATH}
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -q -B -f ${SERVICE_PATH}/pom.xml -DskipTests package
+    mvn -q -B -f ${SERVICE_PATH}/pom.xml -DskipTests clean package
 
 # ---------- runtime ----------
 FROM eclipse-temurin:${JAVA_VERSION}-jre

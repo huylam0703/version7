@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class SensorReadingService {
@@ -32,9 +33,11 @@ public class SensorReadingService {
             LocalDateTime.of(9999, 12, 31, 23, 59, 59, 999_499_999);
 
     private final SensorReadingRepository repository;
+    private final Optional<ReadingAlertOutbox> alertOutbox;
 
-    public SensorReadingService(SensorReadingRepository repository) {
+    public SensorReadingService(SensorReadingRepository repository, Optional<ReadingAlertOutbox> alertOutbox) {
         this.repository = repository;
+        this.alertOutbox = alertOutbox;
     }
 
     public Written saveReading(SensorReadingRequest request) {
@@ -99,7 +102,9 @@ public class SensorReadingService {
         }
         try {
             // The repository transaction rolls back before we return a duplicate response.
-            SensorReading saved = repository.saveAndFlush(reading);
+            SensorReading saved = alertOutbox
+                    .map(outbox -> outbox.save(reading, prepared.status() == WriteStatus.VALID))
+                    .orElseGet(() -> repository.saveAndFlush(reading));
             return new Written(prepared.status(), "Sensor reading saved", saved.getId());
         } catch (DataIntegrityViolationException error) {
             if (isDuplicateConstraint(error)) {

@@ -68,6 +68,7 @@ public class AlertService {
 
         Alert alert = alertMapper.toAlert(request);
         alert.setStatus(AlertStatus.NEW);
+        alert.setCreatedAt(Instant.now());
 
 // Task 8: Lưu ID bản ghi cảm biến tạo ra Alert
 // Alert thủ công vẫn có readingId = null

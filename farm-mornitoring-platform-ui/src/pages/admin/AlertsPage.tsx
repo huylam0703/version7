@@ -21,7 +21,7 @@ export function AlertsPage() {
 
   useEffect(() => { load() }, [severity, status])
 
-  async function setAlertStatus(id: string, next: AlertStatus) {
+  async function setAlertStatus(id: string, next: 'acknowledged' | 'closed') {
     try {
       await alertApi.updateStatus(id, next)
       await load()
@@ -60,7 +60,7 @@ export function AlertsPage() {
                 <td className="px-3 py-2">{a.farmName || '—'} / {a.zoneName || '—'}</td>
                 <td className="px-3 py-2">{alertBadge(a.severity)}</td>
                 <td className="px-3 py-2">{a.status}</td>
-                <td className="px-3 py-2">{formatDate(a.createdAt)}</td>
+                <td className="px-3 py-2">{a.createdAt ? formatDate(a.createdAt) : '—'}</td>
                 <td className="px-3 py-2 space-x-2">
                   {a.status === 'open' ? <Button variant="outline" onClick={() => setAlertStatus(a.id, 'acknowledged')}>Acknowledge</Button> : null}
                   {a.status !== 'closed' ? <Button variant="ghost" onClick={() => setAlertStatus(a.id, 'closed')}>Close</Button> : null}

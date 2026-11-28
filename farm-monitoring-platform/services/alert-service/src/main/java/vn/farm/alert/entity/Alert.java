@@ -5,6 +5,7 @@ import lombok.*;
 import org.hibernate.annotations.Nationalized;
 
 import java.util.UUID;
+import java.time.Instant;
 
 @Entity
 @Table(name = "dbo_AL_Alerts")
@@ -42,4 +43,8 @@ public class Alert {
     // Task 8: ID bản ghi cảm biến đã tạo ra Alert
     @Column(name = "readingId")
     private UUID readingId;
+
+    private Instant createdAt;
+
+    private Boolean notificationPending;
 }

@@ -88,9 +88,24 @@ services:
         condition: service_completed_successfully
       user-auth-service:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: "Server=sqlserver;Database=notification_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+      RabbitMq__Enabled: "true"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__User: ${RABBITMQ_USER}
+      RabbitMq__Password: ${RABBITMQ_PASSWORD}
+      Notifications__Recipients__0__UserId: ${NOTIFICATION_ADMIN_ID:-00000000-0000-0000-0000-000000000000}
+      Notifications__Recipients__0__Email: ${NOTIFICATION_ADMIN_EMAIL:-}
+      Email__Enabled: ${NOTIFICATION_EMAIL_ENABLED:-false}
+      Email__Host: ${NOTIFICATION_SMTP_HOST:-}
+      Email__Port: ${NOTIFICATION_SMTP_PORT:-587}
+      Email__From: ${NOTIFICATION_SMTP_FROM:-}
+      Email__EnableSsl: ${NOTIFICATION_SMTP_SSL:-true}
+      Email__Username: ${NOTIFICATION_SMTP_USERNAME:-}
+      Email__Password: ${NOTIFICATION_SMTP_PASSWORD:-}
       Jwt__Issuer: "farm-auth"
       Jwt__Audience: "farm-api"
       Jwt__MetadataAddress: "http://user-auth-service:8080/.well-known/openid-configuration"
@@ -242,11 +257,19 @@ services:
       <<: *java-build
       args:
         SERVICE_PATH: services/sensor-data-service
-    depends_on: *wait-db
+    depends_on:
+      <<: *wait-db
+      rabbitmq:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=sensor_data_db;encrypt=true;trustServerCertificate=true
       SPRING_DATASOURCE_USERNAME: sa
       SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+      FARM_READING_ALERTS_ENABLED: "true"
+      SPRING_SQL_INIT_MODE: always
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
     ports: ["8084:8080"]
     networks:
       - farm-network
@@ -256,11 +279,19 @@ services:
       <<: *java-build
       args:
         SERVICE_PATH: services/alert-service
-    depends_on: *wait-db
+    depends_on:
+      <<: *wait-db
+      rabbitmq:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=alert_db;encrypt=true;trustServerCertificate=true
       SPRING_DATASOURCE_USERNAME: sa
       SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+      FARM_SECURITY_ENABLED: "true"
+      AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
     ports: ["8085:8080"]
     networks:
       - farm-network

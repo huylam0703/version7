@@ -8,12 +8,15 @@ components:
   schemas:
     ReadingsSyncedPayload:
       type: object
-      required: [nodeId, zoneId, typeId, value, measuredAt]
+      required: [nodeId, value, measuredAt]
       properties:
         readingId:  { type: string, format: uuid, description: "dbo_SD_SensorReadings.ReadingId, để alert ghi ref" }
         nodeId:     { type: string, format: uuid }
         zoneId:     { type: string, format: uuid }
         typeId:     { type: string, format: uuid }
+        farmId:     { type: string, format: uuid, nullable: true }
+        sensorCode: { type: string, description: "Canonical sensor code. Supply this or typeId." }
+        unit:       { type: string, nullable: true }
         channelId:  { type: string, format: uuid }
         missionId:  { type: string, format: uuid, nullable: true }
         value:      { type: number, format: double }

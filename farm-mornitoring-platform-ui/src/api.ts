@@ -1,6 +1,8 @@
 import type {
   AlertItem,
+  AlertSeverity,
   AlertThreshold,
+  SensorType,
   Farm,
   Gateway,
   Mission,
@@ -113,12 +115,65 @@ export const sensorApi = {
     ),
 }
 
+const sensorCodes: Record<SensorType, string> = {
+  soilMoisture: 'SOIL_MOISTURE',
+  airTemperature: 'AIR_TEMP',
+  airHumidity: 'AIR_HUMIDITY',
+  lightIntensity: 'LIGHT',
+  ph: 'PH',
+  waterLevel: 'WATER_LEVEL',
+}
+
+const alertSeverities = { info: 'LOW', warning: 'MEDIUM', critical: 'CRITICAL' } as const
+const displaySeverity = { LOW: 'info', MEDIUM: 'warning', HIGH: 'warning', CRITICAL: 'critical' } as const
+const displayStatus = { NEW: 'open', ACKNOWLEDGED: 'acknowledged', RESOLVED: 'closed' } as const
+
+type ThresholdDto = Omit<AlertThreshold, 'sensorType' | 'severity'> & {
+  sensorCode: string
+  severity: keyof typeof displaySeverity
+}
+
+type AlertDto = {
+  id: string
+  nodeId: string
+  alertType: string
+  message: string
+  severity: keyof typeof displaySeverity
+  status: keyof typeof displayStatus
+  createdAt: string | null
+}
+
 export const alertApi = {
-  list: (params?: object) => mockApi.alerts.list(params as { severity?: string; status?: string }),
-  updateStatus: (id: string, status: string) => mockApi.alerts.updateStatus(id, status as AlertItem['status']),
-  thresholds: () => mockApi.alerts.thresholds(),
-  saveThreshold: (body: Partial<AlertThreshold>) => mockApi.alerts.saveThreshold(body),
-  updateThreshold: (id: string, body: Partial<AlertThreshold>) => mockApi.alerts.saveThreshold({ ...body, id }),
+  list: async (params?: { severity?: AlertSeverity; status?: AlertItem['status'] }): Promise<AlertItem[]> => {
+    const { data } = await axiosClient.get<{ result: AlertDto[] }>('/v1/alerts')
+    return data.result.map((alert) => ({
+      id: alert.id,
+      title: alert.alertType,
+      message: alert.message,
+      sensorNodeId: alert.nodeId,
+      severity: displaySeverity[alert.severity],
+      status: displayStatus[alert.status],
+      createdAt: alert.createdAt ?? '',
+    })).filter((alert) => (!params?.severity || alert.severity === params.severity)
+      && (!params?.status || alert.status === params.status))
+  },
+  updateStatus: (id: string, status: 'acknowledged' | 'closed') =>
+    axiosClient.patch(`/v1/alerts/${id}/${status === 'closed' ? 'resolve' : 'acknowledge'}`),
+  thresholds: async (): Promise<AlertThreshold[]> => {
+    const { data } = await axiosClient.get<ThresholdDto[]>('/v1/thresholds')
+    return data.map(({ sensorCode, severity, ...threshold }) => ({
+      ...threshold,
+      sensorType: (Object.keys(sensorCodes) as SensorType[]).find((key) => sensorCodes[key] === sensorCode)!,
+      severity: displaySeverity[severity],
+    }))
+  },
+  saveThreshold: (body: Partial<AlertThreshold>) => axiosClient.put('/v1/thresholds', {
+    farmId: body.farmId || null,
+    sensorCode: body.sensorType && sensorCodes[body.sensorType],
+    severity: body.severity && alertSeverities[body.severity],
+    minValue: body.minValue,
+    maxValue: body.maxValue,
+  }),
 }
 
 export const notificationApi = {
@@ -126,6 +181,10 @@ export const notificationApi = {
   markRead: async (id: string) => {
     await axiosClient.patch(`/v1/notifications/${id}/read`)
   },
+  unreadCount: async () =>
+    (await axiosClient.get<{ unreadCount: number }>('/v1/notifications/unread-count')).data.unreadCount,
+  markAllRead: () => axiosClient.patch('/v1/notifications/read-all'),
+  remove: (id: string) => axiosClient.delete(`/v1/notifications/${id}`),
 }
 
 export const reportApi = {

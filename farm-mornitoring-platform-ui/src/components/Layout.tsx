@@ -67,12 +67,30 @@ export function AppLayout() {
   const [notesOpen, setNotesOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [notes, setNotes] = useState<NotificationItem[]>([])
+  const [unread, setUnread] = useState(0)
   const location = useLocation()
   const navigate = useNavigate()
 
   useEffect(() => {
-    notificationApi.list().then(setNotes).catch(() => setNotes([]))
-  }, [location.pathname, notesOpen])
+    if (!token || (user?.role !== 'ADMIN' && user?.role !== 'OPERATOR')) {
+      setNotes([])
+      setUnread(0)
+      return
+    }
+    let active = true
+    const refresh = () => {
+      notificationApi.unreadCount().then((count) => { if (active) setUnread(count) }).catch(() => {})
+      if (notesOpen) notificationApi.list().then((items) => { if (active) setNotes(items) }).catch(() => {})
+    }
+    refresh()
+    const interval = window.setInterval(refresh, 10000)
+    window.addEventListener('notifications-changed', refresh)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      window.removeEventListener('notifications-changed', refresh)
+    }
+  }, [location.pathname, notesOpen, token, user?.role])
 
   const items = useMemo(
     () => (user ? NAV.filter((item) => item.roles.includes(user.role)) : []),
@@ -81,7 +99,6 @@ export function AppLayout() {
   const matches = query.trim()
     ? items.filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()))
     : []
-  const unread = notes.filter((note) => !note.isRead).length
   const trail = crumbs(location.pathname)
 
   if (!token || !user) {
@@ -209,7 +226,11 @@ export function AppLayout() {
                     key={note.id}
                     className="block w-full rounded-xl px-2 py-2 text-left hover:bg-stone-50"
                     onClick={() => {
-                      notificationApi.markRead(note.id)
+                      if (!note.isRead) {
+                        notificationApi.markRead(note.id)
+                          .then(() => window.dispatchEvent(new Event('notifications-changed')))
+                          .catch(() => {})
+                      }
                       setNotesOpen(false)
                       navigate('/notifications')
                     }}
