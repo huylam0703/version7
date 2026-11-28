@@ -4,6 +4,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -26,7 +27,7 @@ public class FarmSecurityAutoConfiguration {
     /** Chế độ thật: bắt buộc JWT; claim "role" -> ROLE_ADMIN / ROLE_OPERATOR. */
     @Bean
     @ConditionalOnProperty(name = "farm.security.enabled", havingValue = "true", matchIfMissing = true)
-    SecurityFilterChain jwtChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain jwtChain(HttpSecurity http, Environment environment) throws Exception {
         JwtGrantedAuthoritiesConverter roleAuthorities =
                 new JwtGrantedAuthoritiesConverter();
 
@@ -53,14 +54,22 @@ public class FarmSecurityAutoConfiguration {
 
         http.csrf(c -> c.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(a -> a
-                        .requestMatchers("/health/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html",
-                                "/v3/api-docs/**",
-                                "/v3/api-docs").permitAll()
-                        .requestMatchers("/internal/**").hasRole("SERVICE")
-                        .anyRequest().authenticated())
+                .authorizeHttpRequests(a -> {
+                    a.requestMatchers("/health/**",
+                            "/swagger-ui/**",
+                            "/swagger-ui.html",
+                            "/v3/api-docs/**",
+                            "/v3/api-docs").permitAll();
+
+                    // Ngoại lệ riêng của farm-device: ESP32 tự đăng ký IP, không có JWT.
+                    // Thiết bị vẫn được xác thực bằng deviceUid + authKey trong NodeRegistrationService.
+                    if ("farm-device-service".equals(environment.getProperty("spring.application.name"))) {
+                        a.requestMatchers(HttpMethod.POST, "/api/v1/nodes/register").permitAll();
+                    }
+
+                    a.requestMatchers("/internal/**").hasRole("SERVICE");
+                    a.anyRequest().authenticated();
+                })
                 .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(converter)));
         return http.build();
     }
