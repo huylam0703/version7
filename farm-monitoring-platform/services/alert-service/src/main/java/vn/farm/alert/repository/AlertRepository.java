@@ -1,6 +1,9 @@
 package vn.farm.alert.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 import vn.farm.alert.entity.Alert;
 import vn.farm.alert.entity.AlertStatus;
 
@@ -21,4 +24,11 @@ public interface AlertRepository extends JpaRepository<Alert, UUID> {
     boolean existsByMissionIdAndAlertType(UUID missionId, String alertType);
 
     boolean existsByReadingId(UUID readingId);
+
+    List<Alert> findTop50ByNotificationPendingTrueOrderByCreatedAtAsc();
+
+    @Transactional
+    @Modifying
+    @Query("update Alert a set a.notificationPending = false where a.id = :id")
+    void markNotificationPublished(UUID id);
 }

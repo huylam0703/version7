@@ -6,6 +6,8 @@ import org.springframework.stereotype.Service;
 import vn.farm.alert.config.SensorAlertProperties;
 import vn.farm.alert.dto.event.ReadingsSyncedPayload;
 import vn.farm.alert.entity.AlertSeverity;
+import vn.farm.alert.entity.SensorThreshold;
+import vn.farm.alert.repository.SensorThresholdRepository;
 
 import java.util.Map;
 
@@ -15,6 +17,7 @@ import java.util.Map;
 public class SensorAlertDetectionService {
 
     private final SensorAlertProperties properties;
+    private final SensorThresholdRepository thresholds;
 
     public DetectionResult detect(ReadingsSyncedPayload reading) {
 
@@ -22,6 +25,7 @@ public class SensorAlertDetectionService {
         if (reading == null
                 || reading.readingId() == null
                 || reading.nodeId() == null
+                || (reading.typeId() == null && reading.sensorCode() == null)
                 || reading.value() == null
                 || !Double.isFinite(reading.value())
                 || reading.measuredAt() == null) {
@@ -31,19 +35,27 @@ public class SensorAlertDetectionService {
         }
 
         // 2. Ánh xạ typeId sang mã loại cảm biến
-        String typeId = reading.typeId() == null ? null : reading.typeId().toString();
-
         Map<String, String> typeMappings =
                 properties.getTypeMappings();
 
-        String sensorCode = typeId == null ? reading.sensorCode() : typeMappings.get(typeId);
+        String sensorCode = reading.sensorCode() != null ? reading.sensorCode()
+                : typeMappings.get(reading.typeId().toString());
 
         if (sensorCode == null || sensorCode.isBlank()) {
             log.warn(
                     "No sensor type mapping found for typeId={}",
-                    typeId
+                    reading.typeId()
             );
             return DetectionResult.unconfigured();
+        }
+
+        var configured = thresholds.findById(SensorThreshold.key(reading.farmId(), sensorCode));
+        if (configured.isEmpty() && reading.farmId() != null) {
+            configured = thresholds.findById(SensorThreshold.key(null, sensorCode));
+        }
+        if (configured.isPresent()) {
+            SensorThreshold rule = configured.get();
+            return evaluate(reading, sensorCode, rule.getMinValue(), rule.getMaxValue(), rule.getSeverity());
         }
 
         // 3. Lấy ngưỡng cảnh báo
@@ -64,10 +76,12 @@ public class SensorAlertDetectionService {
             return DetectionResult.unconfigured();
         }
 
-        double value = reading.value();
-        double min = threshold.getMin();
-        double max = threshold.getMax();
+        return evaluate(reading, sensorCode, threshold.getMin(), threshold.getMax(), null);
+    }
 
+    private DetectionResult evaluate(ReadingsSyncedPayload reading, String sensorCode,
+                                     double min, double max, AlertSeverity configuredSeverity) {
+        double value = reading.value();
         // 4. Dữ liệu nằm trong ngưỡng bình thường
         if (value >= min && value <= max) {
             log.info(
@@ -87,7 +101,9 @@ public class SensorAlertDetectionService {
 
         AlertSeverity severity;
 
-        if (range == 0 || exceedAmount > range * 0.5) {
+        if (configuredSeverity != null) {
+            severity = configuredSeverity;
+        } else if (range == 0 || exceedAmount > range * 0.5) {
             severity = AlertSeverity.CRITICAL;
         } else if (exceedAmount > range * 0.2) {
             severity = AlertSeverity.HIGH;
@@ -101,12 +117,14 @@ public class SensorAlertDetectionService {
                 : "above maximum";
 
         String message = String.format(
-                "Sensor %s value %.2f is %s threshold [%.2f, %.2f]",
+                "Sensor %s value %.2f %s is %s threshold [%.2f, %.2f] at %s",
                 sensorCode,
                 value,
+                reading.unit() == null ? "" : reading.unit(),
                 direction,
                 min,
-                max
+                max,
+                reading.measuredAt()
         );
 
         log.warn(

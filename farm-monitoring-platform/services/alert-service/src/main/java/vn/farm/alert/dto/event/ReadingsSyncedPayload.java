@@ -12,6 +12,8 @@ public record ReadingsSyncedPayload(
         UUID missionId,
         Double value,
         Instant measuredAt,
-        String sensorCode
+        UUID farmId,
+        String sensorCode,
+        String unit
 ) {
 }

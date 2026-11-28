@@ -31,31 +31,32 @@ public class NotificationsController : ControllerBase
         var value = User.FindFirst("sub")?.Value
             ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        return Guid.TryParse(value, out var userId)
+        return Guid.TryParse(value, out var userId) && userId != Guid.Empty
             ? userId
             : null;
     }
 
     // 1. Kiểm tra JWT
     [HttpGet("test-auth")]
-    public IActionResult TestAuth()
+    [ProducesResponseType<NotificationAuthResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public ActionResult<NotificationAuthResponse> TestAuth()
     {
         var userId = GetCurrentUserId();
 
         if (userId == null)
             return Unauthorized();
 
-        return Ok(new
-        {
-            message = "JWT authentication successful",
-            userId
-        });
+        return Ok(new NotificationAuthResponse("JWT authentication successful", userId.Value));
     }
 
     // 2. Lấy danh sách thông báo của người dùng
     [HttpGet("me")]
     [Authorize(Roles = InboxRoles)]
-    public async Task<IActionResult> GetMyNotifications(
+    [ProducesResponseType<NotificationResponse[]>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<NotificationResponse[]>> GetMyNotifications(
         CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
@@ -66,13 +67,19 @@ public class NotificationsController : ControllerBase
         var notifications = await _readService.GetByUserIdAsync(
             userId.Value, cancellationToken);
 
-        return Ok(notifications);
+        return Ok(notifications.Select(notification => new NotificationResponse(
+            notification.Id, notification.UserId, notification.Title, notification.Message,
+            notification.Type, notification.IsRead, notification.CreatedAt, notification.ReadAt,
+            notification.SourceEventId)).ToArray());
     }
 
     // 3. Đếm số thông báo chưa đọc
     [HttpGet("unread-count")]
     [Authorize(Roles = InboxRoles)]
-    public async Task<IActionResult> GetUnreadCount(
+    [ProducesResponseType<UnreadCountResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<UnreadCountResponse>> GetUnreadCount(
         CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
@@ -83,16 +90,23 @@ public class NotificationsController : ControllerBase
         var count = await _readService.GetUnreadCountAsync(
             userId.Value, cancellationToken);
 
-        return Ok(new { unreadCount = count });
+        return Ok(new UnreadCountResponse(count));
     }
 
     // 4. Tạo thông báo (chỉ ADMIN)
     [HttpPost]
     [Authorize(Roles = "ADMIN")]
-    public async Task<IActionResult> CreateNotification(
+    [ProducesResponseType<NotificationCreatedResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<NotificationCreatedResponse>> CreateNotification(
         [FromBody] CreateNotificationDto dto,
         CancellationToken cancellationToken)
     {
+        if (GetCurrentUserId() == null)
+            return Unauthorized();
+
         if (dto.UserId == Guid.Empty)
             return BadRequest("UserId không hợp lệ.");
 
@@ -109,17 +123,18 @@ public class NotificationsController : ControllerBase
         var id = await _writeService.CreateAsync(
             notification, cancellationToken);
 
-        return StatusCode(201, new
-        {
-            message = "Tạo thông báo thành công",
-            notificationId = id
-        });
+        return StatusCode(StatusCodes.Status201Created,
+            new NotificationCreatedResponse("Tạo thông báo thành công", id));
     }
 
     // 5. Đánh dấu một thông báo đã đọc
     [HttpPatch("{id:guid}/read")]
     [Authorize(Roles = InboxRoles)]
-    public async Task<IActionResult> MarkAsRead(
+    [ProducesResponseType<NotificationReadResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<NotificationReadResponse>> MarkAsRead(
         Guid id,
         CancellationToken cancellationToken)
     {
@@ -134,13 +149,16 @@ public class NotificationsController : ControllerBase
         if (!updated)
             return NotFound("Không tìm thấy thông báo.");
 
-        return Ok(new { message = "Đã đánh dấu đã đọc" });
+        return Ok(new NotificationReadResponse("Đã đánh dấu đã đọc"));
     }
 
     // 6. Đánh dấu tất cả thông báo đã đọc
     [HttpPatch("read-all")]
     [Authorize(Roles = InboxRoles)]
-    public async Task<IActionResult> MarkAllAsRead(
+    [ProducesResponseType<NotificationsReadResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<NotificationsReadResponse>> MarkAllAsRead(
         CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
@@ -151,16 +169,16 @@ public class NotificationsController : ControllerBase
         var count = await _writeService.MarkAllAsReadAsync(
             userId.Value, cancellationToken);
 
-        return Ok(new
-        {
-            message = "Đã đánh dấu tất cả đã đọc",
-            updatedCount = count
-        });
+        return Ok(new NotificationsReadResponse("Đã đánh dấu tất cả đã đọc", count));
     }
 
     // 7. Xóa một thông báo
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = InboxRoles)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteNotification(
         Guid id,
         CancellationToken cancellationToken)

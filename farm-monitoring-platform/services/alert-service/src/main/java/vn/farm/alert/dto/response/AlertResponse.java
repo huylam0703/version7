@@ -5,6 +5,7 @@ import vn.farm.alert.entity.AlertSeverity;
 import vn.farm.alert.entity.AlertStatus;
 
 import java.util.UUID;
+import java.time.Instant;
 
 @Data
 public class AlertResponse {
@@ -22,4 +23,6 @@ public class AlertResponse {
     private String message;
 
     private AlertStatus status;
+
+    private Instant createdAt;
 }

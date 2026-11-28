@@ -164,4 +164,8 @@ public class SensorReading {
     public void setContext(ReadingContext context) {
         this.context = context;
     }
+
+    public ReadingContext getContext() {
+        return context;
+    }
 }

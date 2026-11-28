@@ -83,6 +83,12 @@ public sealed class NotificationEventProcessor(
             {
                 RequiredId(payload, "alertId");
                 var type = RequiredText(payload, "type");
+                // Older Alert deployments sent the sensor code as the alert type.
+                var legacySensorCode = type is "AIR_TEMP" or "AIR_HUMIDITY" or "SOIL_MOISTURE" or "LIGHT" or "PH" or "WATER_LEVEL"
+                    ? type
+                    : null;
+                if (legacySensorCode is not null)
+                    type = "OUT_OF_RANGE";
                 var severity = RequiredText(payload, "severity");
                 var message = RequiredText(payload, "message");
                 if (type is not ("OUT_OF_RANGE" or "DATA_TIMEOUT" or "LOW_BATTERY" or "COLLECTION_FAILED" or "MISSION_FAILED") ||
@@ -92,7 +98,10 @@ public sealed class NotificationEventProcessor(
                 if (missionSource == "Direct" && (type == "MISSION_FAILED" ||
                     (type == "COLLECTION_FAILED" && payload.TryGetProperty("missionId", out var missionId) &&
                         missionId.ValueKind != JsonValueKind.Null))) return null;
-                return new NotificationEvent(eventId, eventType, $"Alert {severity}: {type}", message);
+                var title = legacySensorCode is null
+                    ? $"Alert {severity}: {type}"
+                    : $"Alert {severity}: {type} ({legacySensorCode})";
+                return new NotificationEvent(eventId, eventType, title, message);
             }
 
             if (eventType == "mission.status_changed")

@@ -6,6 +6,11 @@ server:
 spring:
   application:
     name: alert-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
 
   security:
     oauth2:

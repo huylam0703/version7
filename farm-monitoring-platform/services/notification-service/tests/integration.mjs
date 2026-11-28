@@ -19,6 +19,7 @@ const rabbitPassword = process.env.NOTI_TEST_RABBIT_PASSWORD;
 assert(sqlContainer && sqlPassword && rabbitUser && rabbitPassword,
   'Set NOTI_TEST_SQL_CONTAINER, NOTI_TEST_SQL_PASSWORD, NOTI_TEST_RABBIT_USER and NOTI_TEST_RABBIT_PASSWORD');
 const rabbitUrl = process.env.NOTI_TEST_RABBIT_URL || 'http://127.0.0.1:15672';
+const rabbitAmqpPort = process.env.NOTI_TEST_RABBIT_AMQP_PORT || '5672';
 const sqlAddress = process.env.NOTI_TEST_SQL_ADDRESS || 'localhost,14331';
 const suffix = randomUUID().replaceAll('-', '');
 const database = `noti_test_${suffix}`;
@@ -169,7 +170,8 @@ async function start(overrides = {}) {
     env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development',
       ConnectionStrings__Default: `Server=${sqlAddress};Database=${database};User Id=sa;Password=${sqlPassword};TrustServerCertificate=True`,
       Jwt__MetadataAddress: `${authUrl}/.well-known/openid-configuration`,
-      RabbitMq__Enabled: 'true', RabbitMq__Host: 'localhost', RabbitMq__VirtualHost: vhost,
+      RabbitMq__Enabled: 'true', RabbitMq__Host: '127.0.0.1', RabbitMq__Port: rabbitAmqpPort,
+      RabbitMq__VirtualHost: vhost,
       RabbitMq__User: rabbitUser, RabbitMq__Password: rabbitPassword,
       Notifications__RecipientSource: 'UserAuth', Notifications__MissionSource: 'Direct',
       UserAuth__BaseUrl: `${authUrl}/`, UserAuth__ClientSecret: 'integration-secret',
@@ -194,9 +196,11 @@ async function stop(app) {
   app.process.kill();
   await exited;
 }
-async function api(app, route, method = 'GET', token = jwt()) {
+async function api(app, route, method = 'GET', token = jwt(), body) {
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   return fetch(`${app.url}/api/notifications${route}`, { method,
-    headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    headers, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 const processed = id => Number(sql(`SELECT COUNT(*) FROM ProcessedNotificationEvents WHERE EventId='${id}'`)) === 1;
 const emailSent = id => Number(sql(`SELECT COUNT(*) FROM NotificationEmails WHERE EventId='${id}' AND SentAt IS NOT NULL`)) > 0;
@@ -249,6 +253,46 @@ try {
   assert.equal((await api(app, '/me', 'GET', operatorToken)).status, 200);
   assert.equal((await api(app, '', 'POST', operatorToken)).status, 403);
   console.log('PASS notification inbox role restrictions');
+
+  const emptyId = '00000000-0000-0000-0000-000000000000';
+  assert.equal((await api(app, '/me', 'GET', jwt(emptyId, 'ADMIN'))).status, 401);
+  const recipientId = randomUUID();
+  const recipientToken = jwt(recipientId, 'OPERATOR');
+  const otherToken = jwt(randomUUID(), 'OPERATOR');
+  const adminToken = jwt();
+  const manual = { userId: recipientId, title: 'Manual notice', message: 'Inbox API test' };
+  assert.equal((await api(app, '', 'POST', jwt(emptyId, 'ADMIN'), manual)).status, 401);
+  assert.equal((await api(app, '', 'POST', adminToken, { ...manual, userId: emptyId })).status, 400);
+  assert.equal((await api(app, '', 'POST', adminToken, { ...manual, title: ' ' })).status, 400);
+
+  const first = await api(app, '', 'POST', adminToken, manual);
+  assert.equal(first.status, 201);
+  const { notificationId } = await first.json();
+  assert(notificationId);
+  const second = await api(app, '', 'POST', adminToken, { ...manual, title: 'Second notice' });
+  assert.equal(second.status, 201);
+  const secondId = (await second.json()).notificationId;
+  const unread = async () => (await (await api(app, '/unread-count', 'GET', recipientToken)).json()).unreadCount;
+  const inbox = async () => (await api(app, '/me', 'GET', recipientToken)).json();
+  assert.equal(await unread(), 2);
+  assert.equal((await inbox()).find(item => item.id === notificationId).type, 'SYSTEM');
+  assert.equal((await api(app, `/${notificationId}/read`, 'PATCH', otherToken)).status, 404);
+  assert.equal((await api(app, `/${notificationId}`, 'DELETE', otherToken)).status, 404);
+  assert.equal((await api(app, `/${notificationId}/read`, 'PATCH', recipientToken)).status, 200);
+  const readAt = (await inbox()).find(item => item.id === notificationId).readAt;
+  assert(readAt);
+  assert.equal((await api(app, `/${notificationId}/read`, 'PATCH', recipientToken)).status, 200);
+  assert.equal((await inbox()).find(item => item.id === notificationId).readAt, readAt);
+  assert.equal(await unread(), 1);
+  assert.equal((await (await api(app, '/read-all', 'PATCH', recipientToken)).json()).updatedCount, 1);
+  assert.equal((await (await api(app, '/read-all', 'PATCH', recipientToken)).json()).updatedCount, 0);
+  assert.equal(await unread(), 0);
+  assert.equal((await api(app, `/${notificationId}`, 'DELETE', recipientToken)).status, 204);
+  assert.equal((await api(app, `/${notificationId}/read`, 'PATCH', recipientToken)).status, 404);
+  assert.equal((await api(app, `/${secondId}`, 'DELETE', recipientToken)).status, 204);
+  assert.deepEqual(await inbox(), []);
+  console.log('PASS manual create, input validation, unread counts, repeat reads and ownership');
+
   const sample = event();
   await publish(sample);
   await waitFor(() => emailSent(sample.eventId), 'event and SMTP delivery');
@@ -346,6 +390,8 @@ try {
   await publish(mission);
   await publish(missionAlert);
   await waitFor(() => emailSent(mission.eventId), 'direct mission notification');
+  const missionInbox = await (await api(app, '/me')).json();
+  assert.equal(missionInbox.find(item => item.sourceEventId === mission.eventId)?.title, 'Mission PARTIAL');
   await pause(1000);
   assert(!processed(missionAlert.eventId));
   await stop(app);
@@ -367,6 +413,15 @@ try {
   await publish(afterReconnect);
   await waitFor(() => emailSent(afterReconnect.eventId), 'RabbitMQ reconnect');
   console.log('PASS consumer reconnects and resumes delivery after connection loss');
+
+  const sensorAlert = event('alert.created', { type: 'AIR_TEMP', message: 'AIR_TEMP 39 C exceeds 35 C' });
+  await publish(sensorAlert);
+  await waitFor(() => emailSent(sensorAlert.eventId), 'sensor-code event web and SMTP delivery');
+  const sensorInbox = await (await api(app, '/me')).json();
+  const sensorNotice = sensorInbox.find(item => item.sourceEventId === sensorAlert.eventId);
+  assert.equal(sensorNotice?.title, 'Alert HIGH: OUT_OF_RANGE (AIR_TEMP)');
+  assert.equal(sensorNotice?.message, sensorAlert.payload.message);
+  console.log('PASS legacy sensor alert type delivers web and email');
   console.log('All notification integration scenarios passed. SMTP messages remained in the local test sink.');
 } finally {
   for (const app of applications) await stop(app);

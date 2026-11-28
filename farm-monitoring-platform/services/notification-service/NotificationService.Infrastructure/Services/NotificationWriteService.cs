@@ -28,22 +28,17 @@ public class NotificationWriteService : INotificationService
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        var notification = await _context.Notifications
-            .FirstOrDefaultAsync(
-                n => n.Id == notificationId && n.UserId == userId,
+        var ownedNotification = _context.Notifications
+            .Where(n => n.Id == notificationId && n.UserId == userId);
+        var updated = await ownedNotification
+            .Where(n => !n.IsRead)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(n => n.IsRead, true)
+                    .SetProperty(n => n.ReadAt, DateTime.UtcNow),
                 cancellationToken);
 
-        if (notification == null)
-            return false;
-
-        if (!notification.IsRead)
-        {
-            notification.IsRead = true;
-            notification.ReadAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-
-        return true;
+        return updated > 0 || await ownedNotification.AnyAsync(cancellationToken);
     }
 
     public async Task<int> MarkAllAsReadAsync(

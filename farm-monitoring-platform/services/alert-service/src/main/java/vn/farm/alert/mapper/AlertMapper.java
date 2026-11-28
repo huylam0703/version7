@@ -11,6 +11,8 @@ public interface AlertMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "status", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "notificationPending", ignore = true)
     Alert toAlert(CreateAlertRequest request);
 
     AlertResponse toAlertResponse(Alert alert);

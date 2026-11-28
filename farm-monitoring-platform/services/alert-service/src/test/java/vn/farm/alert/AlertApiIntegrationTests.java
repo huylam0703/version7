@@ -336,7 +336,7 @@ class AlertApiIntegrationTests {
     private static EventEnvelope<ReadingsSyncedPayload> reading(UUID nodeId, double temperature) {
         Instant measuredAt = Instant.now();
         var data = new ReadingsSyncedPayload(UUID.randomUUID(), nodeId, null, null, null, null,
-                temperature, measuredAt, "AIR_TEMP");
+                temperature, measuredAt, null, "AIR_TEMP", null);
         return new EventEnvelope<>(UUID.randomUUID(), "readings.synced", 1, measuredAt,
                 "sensor-data-service", "", data);
     }

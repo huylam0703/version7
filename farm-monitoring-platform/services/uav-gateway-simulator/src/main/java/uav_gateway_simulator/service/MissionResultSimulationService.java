@@ -79,6 +79,16 @@ public class MissionResultSimulationService {
         }
 
 
+        MissionResultPayloadStore.PendingResult stored = payloadStore.get(executionId);
+        if (stored != null) {
+            if (!missionId.equals(stored.missionId())) {
+                throw new IllegalStateException("ExecutionId belongs to another mission");
+            }
+            if (ownershipToken.equals(stored.ownershipToken())) {
+                return sendPendingResults(stored, ownershipToken);
+            }
+        }
+
         // Đọc Progress đã được Mission Service xác nhận.
         // Sử dụng đúng tên method hiện có trong MissionClient.
         MissionProgressDetailResponse progress =
