@@ -4,14 +4,15 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 
-import vn.farm.core.api.ApiResponse;
 import vn.farm.alert.dto.request.CreateAlertRequest;
 import vn.farm.alert.dto.response.AlertResponse;
+import vn.farm.alert.entity.AlertSeverity;
 import vn.farm.alert.entity.AlertStatus;
 import vn.farm.alert.service.AlertService;
+import vn.farm.core.api.ApiResponse;
 
 import java.util.List;
 import java.util.UUID;
@@ -39,17 +40,22 @@ public class AlertController {
 
     @PreAuthorize("@alertAccess.canView()")
     @GetMapping
-    public ApiResponse<List<AlertResponse>> getAllAlerts() {
+    public ApiResponse<List<AlertResponse>> getAllAlerts(
+            @RequestParam(required = false) UUID nodeId,
+            @RequestParam(required = false) UUID missionId,
+            @RequestParam(required = false) AlertStatus status,
+            @RequestParam(required = false) AlertSeverity severity,
+            @RequestParam(required = false) String alertType) {
+
         return ApiResponse.<List<AlertResponse>>builder()
                 .message("Get alerts successfully")
-                .result(alertService.getAllAlerts())
+                .result(alertService.getAllAlerts(nodeId, missionId, status, severity, alertType))
                 .build();
     }
 
     @PreAuthorize("@alertAccess.canView()")
     @GetMapping("/{id}")
-    public ApiResponse<AlertResponse> getAlertById(
-            @PathVariable UUID id) {
+    public ApiResponse<AlertResponse> getAlertById(@PathVariable UUID id) {
 
         return ApiResponse.<AlertResponse>builder()
                 .message("Get alert successfully")
@@ -59,8 +65,7 @@ public class AlertController {
 
     @PreAuthorize("@alertAccess.canView()")
     @GetMapping("/node/{nodeId}")
-    public ApiResponse<List<AlertResponse>> getAlertsByNodeId(
-            @PathVariable UUID nodeId) {
+    public ApiResponse<List<AlertResponse>> getAlertsByNodeId(@PathVariable UUID nodeId) {
 
         return ApiResponse.<List<AlertResponse>>builder()
                 .message("Get node alerts successfully")
@@ -70,8 +75,7 @@ public class AlertController {
 
     @PreAuthorize("@alertAccess.canView()")
     @GetMapping("/status/{status}")
-    public ApiResponse<List<AlertResponse>> getAlertsByStatus(
-            @PathVariable AlertStatus status) {
+    public ApiResponse<List<AlertResponse>> getAlertsByStatus(@PathVariable AlertStatus status) {
 
         return ApiResponse.<List<AlertResponse>>builder()
                 .message("Get alerts by status successfully")
@@ -84,8 +88,8 @@ public class AlertController {
     @GetMapping("/node/{nodeId}/status/{status}")
     public ApiResponse<List<AlertResponse>> getAlertsByNodeIdAndStatus(
             @PathVariable UUID nodeId,
-            @PathVariable AlertStatus status
-    ) {
+            @PathVariable AlertStatus status) {
+
         return ApiResponse.<List<AlertResponse>>builder()
                 .message("Get alerts by node and status successfully")
                 .result(alertService.getAlertsByNodeIdAndStatus(nodeId, status))
@@ -94,8 +98,7 @@ public class AlertController {
 
     @PreAuthorize("@alertAccess.canManage()")
     @PatchMapping("/{id}/acknowledge")
-    public ApiResponse<AlertResponse> acknowledgeAlert(
-            @PathVariable UUID id) {
+    public ApiResponse<AlertResponse> acknowledgeAlert(@PathVariable UUID id) {
 
         return ApiResponse.<AlertResponse>builder()
                 .message("Alert acknowledged successfully")
@@ -105,8 +108,7 @@ public class AlertController {
 
     @PreAuthorize("@alertAccess.canManage()")
     @PatchMapping("/{id}/resolve")
-    public ApiResponse<AlertResponse> resolveAlert(
-            @PathVariable UUID id) {
+    public ApiResponse<AlertResponse> resolveAlert(@PathVariable UUID id) {
 
         return ApiResponse.<AlertResponse>builder()
                 .message("Alert resolved successfully")
