@@ -10,7 +10,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Dùng trong @PreAuthorize("@access.admin()") theo Auth Matrix của workbook API.
- * Khi farm.security.enabled=false (dev chạy riêng) thì luôn cho qua, nên không cần comment @PreAuthorize nữa.
+ * Khi farm.security.enabled=false (dev chạy riêng) thì luôn cho qua.
+ * Người dùng chỉ có 2 role ADMIN và OPERATOR; SERVICE là token service-to-service.
  */
 @Component("access")
 public class Access {
@@ -21,9 +22,9 @@ public class Access {
     public boolean read() { return has("ADMIN", "OPERATOR", "SERVICE"); }
 
     /** Ghi farm/zone. */
-    public boolean admin() { return has("ADMIN"); }
+    public boolean admin() { return has("ADMIN", "OPERATOR"); }
 
-    /** Ghi node/UAV/gateway (OPERATOR, ADMIN được phép thêm). Muốn bỏ ADMIN thì sửa ở đây. */
+    /** Ghi node/UAV/gateway. */
     public boolean deviceWrite() { return has("OPERATOR", "ADMIN"); }
 
     /** API nội bộ (Simulator, service khác): chỉ SERVICE hoặc ADMIN. OPERATOR không được lấy endpoint thiết bị. */
