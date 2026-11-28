@@ -26,9 +26,11 @@ public class MissionProgressService {
     private final MissionExecutionRepository executionRepository;
     private final WaypointRepository waypointRepository;
     private final MissionNodeRepository missionNodeRepository;
+    private final MissionRecoveryOwnershipValidator ownershipValidator;
+    private final MissionExecutionLockService executionLockService;
 
     // =====================================================
-    // POST - UPDATE MISSION PROGRESS
+    // POST - UPDATE MISSION PROGRESS (ADMIN / OPERATOR)
     // =====================================================
 
     @Transactional
@@ -36,18 +38,63 @@ public class MissionProgressService {
             UUID missionId,
             MissionProgressRequest request
     ) {
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
 
-        // 1. Khóa Execution để tránh cập nhật đồng thời
-        MissionExecution execution = executionRepository
-                .findForProgress(request.getExecutionId(), missionId)
-                .orElseThrow(() -> BusinessException.notFound(
-                        "EXECUTION_NOT_FOUND",
-                        "Không tìm thấy Mission Execution"
-                ));
+        return processProgress(missionId, request, execution);
+    }
 
+    // =====================================================
+    // POST - UPDATE MISSION PROGRESS (UAV SIMULATOR)
+    // =====================================================
+
+    @Transactional
+    public MissionProgressResponse updateProgress(
+            UUID missionId,
+            MissionProgressRequest request,
+            String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        MissionExecution execution = executionLockService.lock(
+                missionId,
+                request.getExecutionId()
+        );
+
+        if (!clientId.equals(execution.getAssignedClientId())) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_NOT_ASSIGNED",
+                    "Simulator không được phân công Mission này"
+            );
+        }
+        ownershipValidator.validate(
+                execution,
+                request.getInstanceId(),
+                request.getRecoveryGeneration()
+        );
+
+        return processProgress(missionId, request, execution);
+    }
+
+    // =====================================================
+    // SHARED PROGRESS PROCESSING
+    // =====================================================
+
+    private MissionProgressResponse processProgress(
+            UUID missionId,
+            MissionProgressRequest request,
+            MissionExecution execution
+    ) {
         Mission mission = execution.getMission();
 
-        // 2. Kiểm tra trạng thái Mission
+        // 1. Kiểm tra trạng thái Mission
         if (mission.getStatus() != MissionStatus.RUNNING) {
             throw BusinessException.invalid(
                     "INVALID_MISSION_STATUS",
@@ -55,17 +102,16 @@ public class MissionProgressService {
             );
         }
 
-        // 3. Kiểm tra trạng thái Execution
+        // 2. Kiểm tra trạng thái Execution
         if (execution.getStatus()
                 != MissionExecutionStatus.EXECUTING) {
-
             throw BusinessException.invalid(
                     "INVALID_EXECUTION_STATUS",
                     "Execution phải ở trạng thái EXECUTING"
             );
         }
 
-        // 4. Kiểm tra sequence
+        // 3. Kiểm tra sequence
         long lastSequence = execution.getLastConfirmedSequence();
         long expectedSequence = lastSequence + 1;
 
@@ -84,7 +130,7 @@ public class MissionProgressService {
             );
         }
 
-        // 5. Kiểm tra Waypoint thuộc Mission
+        // 4. Kiểm tra Waypoint thuộc Mission
         Waypoint waypoint = waypointRepository
                 .findByMission_MissionIdAndSeq(
                         missionId,
@@ -102,7 +148,7 @@ public class MissionProgressService {
             );
         }
 
-        // 6. Kiểm tra danh sách Node
+        // 5. Kiểm tra danh sách Node
         List<MissionNodeProgressRequest> nodeResults =
                 request.getNodeResults() == null
                         ? List.of()
@@ -110,9 +156,8 @@ public class MissionProgressService {
 
         Set<UUID> receivedNodeIds = new HashSet<>();
 
-        // 6.1. Kiểm tra Node trùng
+        // 5.1. Kiểm tra Node trùng
         for (MissionNodeProgressRequest item : nodeResults) {
-
             if (item == null || item.getNodeId() == null) {
                 throw BusinessException.invalid(
                         "INVALID_NODE",
@@ -128,11 +173,10 @@ public class MissionProgressService {
             }
         }
 
-        // 6.2. Kiểm tra toàn bộ Node trước khi cập nhật
+        // 5.2. Kiểm tra toàn bộ Node trước khi cập nhật
         List<MissionNode> nodesToUpdate = new ArrayList<>();
 
         for (MissionNodeProgressRequest item : nodeResults) {
-
             MissionNode node = missionNodeRepository
                     .findByMission_MissionIdAndNodeId(
                             missionId,
@@ -142,6 +186,17 @@ public class MissionProgressService {
                             "INVALID_NODE",
                             "Node không thuộc Mission"
                     ));
+
+            // Kiểm tra Node được phân công đúng Waypoint
+            if (node.getWaypoint() == null
+                    || !waypoint.getWaypointId().equals(
+                    node.getWaypoint().getWaypointId()
+            )) {
+                throw BusinessException.invalid(
+                        "NODE_NOT_ASSIGNED_TO_WAYPOINT",
+                        "Node không được phân công tại Waypoint này"
+                );
+            }
 
             if (!"PENDING".equals(node.getResult())) {
                 throw BusinessException.invalid(
@@ -159,7 +214,6 @@ public class MissionProgressService {
 
             if (item.getRecordsCount() < 0
                     || item.getAttempts() < 0) {
-
                 throw BusinessException.invalid(
                         "INVALID_NODE_PROGRESS",
                         "RecordsCount hoặc Attempts không hợp lệ"
@@ -169,9 +223,8 @@ public class MissionProgressService {
             nodesToUpdate.add(node);
         }
 
-        // 6.3. Cập nhật Node sau khi tất cả hợp lệ
+        // 5.3. Cập nhật Node
         for (int i = 0; i < nodesToUpdate.size(); i++) {
-
             MissionNode node = nodesToUpdate.get(i);
             MissionNodeProgressRequest item = nodeResults.get(i);
 
@@ -185,18 +238,18 @@ public class MissionProgressService {
             missionNodeRepository.saveAll(nodesToUpdate);
         }
 
-        // 7. Cập nhật Waypoint
+        // 6. Cập nhật Waypoint
         waypoint.setStatus("REACHED");
         waypoint.setReachedAt(request.getReachedAt());
 
         waypointRepository.save(waypoint);
 
-        // 8. Xác nhận sequence
+        // 7. Xác nhận sequence
         execution.setLastConfirmedSequence(request.getSequence());
 
         executionRepository.save(execution);
 
-        // 9. Trả kết quả
+        // 8. Trả response
         return MissionProgressResponse.builder()
                 .missionId(missionId)
                 .executionId(execution.getExecutionId())
@@ -216,7 +269,6 @@ public class MissionProgressService {
     @Transactional(readOnly = true)
     public MissionProgressDetailResponse getProgress(UUID missionId) {
 
-        // 1. Tìm Execution
         MissionExecution execution = executionRepository
                 .findByMission_MissionId(missionId)
                 .orElseThrow(() -> BusinessException.notFound(
@@ -226,23 +278,19 @@ public class MissionProgressService {
 
         Mission mission = execution.getMission();
 
-        // 2. Lấy danh sách Waypoint
         List<Waypoint> waypoints =
                 waypointRepository
                         .findByMission_MissionIdOrderBySeqAsc(missionId);
 
-        // 3. Lấy danh sách Node
         List<MissionNode> nodes =
                 missionNodeRepository.findByMission_MissionId(missionId);
 
-        // 4. Tính số Waypoint đã hoàn thành
         int totalWaypoints = waypoints.size();
 
         int reachedWaypoints = (int) waypoints.stream()
                 .filter(w -> "REACHED".equals(w.getStatus()))
                 .count();
 
-        // 5. Tính số Node đã xử lý
         int totalNodes = nodes.size();
 
         int processedNodes = (int) nodes.stream()
@@ -252,7 +300,6 @@ public class MissionProgressService {
                 )
                 .count();
 
-        // 6. Tính tỷ lệ hoàn thành
         double waypointProgress = totalWaypoints == 0
                 ? 0.0
                 : (double) reachedWaypoints / totalWaypoints;
@@ -264,29 +311,19 @@ public class MissionProgressService {
         double progressPercent;
 
         if (totalWaypoints == 0 && totalNodes == 0) {
-
             progressPercent = 0.0;
-
         } else if (totalWaypoints == 0) {
-
             progressPercent = nodeProgress * 100.0;
-
         } else if (totalNodes == 0) {
-
             progressPercent = waypointProgress * 100.0;
-
         } else {
-
-            // Waypoint 50%, Node 50%
             progressPercent =
                     (waypointProgress + nodeProgress) * 50.0;
         }
 
-        // Làm tròn 2 chữ số thập phân
         progressPercent =
                 Math.round(progressPercent * 100.0) / 100.0;
 
-        // 7. Map Waypoint
         List<MissionProgressDetailResponse.WaypointProgress>
                 waypointDetails = waypoints.stream()
                 .map(w ->
@@ -300,7 +337,6 @@ public class MissionProgressService {
                 )
                 .toList();
 
-        // 8. Map Node
         List<MissionProgressDetailResponse.NodeProgress>
                 nodeDetails = nodes.stream()
                 .map(n ->
@@ -315,7 +351,6 @@ public class MissionProgressService {
                 )
                 .toList();
 
-        // 9. Trả response
         return MissionProgressDetailResponse.builder()
                 .missionId(missionId)
                 .executionId(execution.getExecutionId())
@@ -333,4 +368,35 @@ public class MissionProgressService {
                 .nodes(nodeDetails)
                 .build();
     }
+
+
+    @Transactional(readOnly = true)
+    public MissionProgressDetailResponse getProgress(
+            UUID missionId,
+            String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_CLIENT_ID_REQUIRED",
+                    "Không xác định được Simulator"
+            );
+        }
+
+        MissionExecution execution = executionRepository
+                .findByMission_MissionId(missionId)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "EXECUTION_NOT_FOUND",
+                        "Mission chưa có Execution"
+                ));
+
+        if (!clientId.equals(execution.getAssignedClientId())) {
+            throw BusinessException.invalid(
+                    "SIMULATOR_NOT_ASSIGNED",
+                    "Simulator không được phân công Mission này"
+            );
+        }
+
+        return getProgress(missionId);
+    }
+
 }

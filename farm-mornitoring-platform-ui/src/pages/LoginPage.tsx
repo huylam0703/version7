@@ -4,13 +4,14 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { homePathByRole, useAuth } from '../AuthContext'
 import { Button, ErrorBox, Input } from '../components/Ui'
+import { getErrorMessage } from '../api/errorHandler'
 
 export function LoginPage() {
   const { login, token, user, loading } = useAuth()
   const navigate = useNavigate()
 
-  const [email, setEmail] = useState('admin@farm.local')
-  const [password, setPassword] = useState('demo')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState('')
@@ -44,9 +45,7 @@ export function LoginPage() {
         replace: true,
       })
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Login failed'
-      )
+      setError(getErrorMessage(err))
     }
   }
 
@@ -67,8 +66,7 @@ export function LoginPage() {
         </div>
 
         <p className="max-w-md text-sm text-stone-500">
-          Demo data is already loaded. Sign in to review farms, sensors,
-          alerts, and collection missions.
+          Sign in to review farms, sensors, alerts, and collection missions.
         </p>
       </section>
 

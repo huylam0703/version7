@@ -5,6 +5,8 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -31,4 +33,7 @@ public class WaypointRequest {
     @DecimalMin("0.0")
     @DecimalMax("9999.99")
     BigDecimal altitudeM;
+
+    @NotNull
+    List<@NotNull UUID> nodeIds;
 }

@@ -10,6 +10,8 @@ import {
 
 import { authApi } from './api/authApi'
 import type { User } from './types/auth'
+import { useEffect } from 'react'          // gộp vào import react có sẵn
+import { accountApi } from './api/admin/accountApi'
 
 type AuthContextValue = {
   user: User | null
@@ -21,6 +23,7 @@ type AuthContextValue = {
     remember: boolean
   ) => Promise<User>
   logout: () => Promise<void>
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -89,39 +92,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.getItem('refreshToken') ||
       sessionStorage.getItem('refreshToken')
 
-    try {
-      // Thu hồi Refresh Token ở Backend
-      if (refreshToken) {
-        await authApi.logout(refreshToken)
+      try {
+        // Thu hồi Refresh Token ở Backend
+        if (refreshToken) {
+          await authApi.logout(refreshToken)
+        }
+      } catch (error) {
+        console.error('Không thể thu hồi Refresh Token:', error)
+      } finally {
+        // Luôn xóa dữ liệu đăng nhập ở Frontend
+        localStorage.removeItem('token')
+        localStorage.removeItem('refreshToken')
+        localStorage.removeItem('user')
+
+        sessionStorage.removeItem('token')
+        sessionStorage.removeItem('refreshToken')
+        sessionStorage.removeItem('user')
+
+        setToken(null)
+        setUser(null)
       }
-    } catch (error) {
-      console.error('Không thể thu hồi Refresh Token:', error)
-    } finally {
-      // Luôn xóa dữ liệu đăng nhập ở Frontend
-      localStorage.removeItem('token')
-      localStorage.removeItem('refreshToken')
-      localStorage.removeItem('user')
+    }, [])
 
-      sessionStorage.removeItem('token')
-      sessionStorage.removeItem('refreshToken')
-      sessionStorage.removeItem('user')
+  const refreshUser = useCallback(async (): Promise<void> => {
+    if (!readStoredToken()) return
 
-      setToken(null)
-      setUser(null)
-    }
+    const fresh = await accountApi.getMe()
+
+    // Ghi lại vào đúng storage đang giữ token
+    const storage =
+      localStorage.getItem('token') !== null ? localStorage : sessionStorage
+    storage.setItem('user', JSON.stringify(fresh))
+
+    setUser(fresh)
   }, [])
 
-  const value = useMemo(
-    () => ({
-      user,
-      token,
-      loading,
-      login,
-      logout,
-    }),
-    [user, token, loading, login, logout]
-  )
+  // Đồng bộ user (role, trạng thái, tên) khi có token, tức là lúc mở app hoặc vừa đăng nhập
+  useEffect(() => {
+    if (!token) return
+    refreshUser().catch(() => {
+      // 401 đã được interceptor xử lý (refresh hoặc đăng xuất)
+    })
+  }, [token, refreshUser])
 
+  const value = useMemo(
+  () => ({ user, token, loading, login, logout, refreshUser }),
+  [user, token, loading, login, logout, refreshUser],
+)
   return (
     <AuthContext.Provider value={value}>
       {children}

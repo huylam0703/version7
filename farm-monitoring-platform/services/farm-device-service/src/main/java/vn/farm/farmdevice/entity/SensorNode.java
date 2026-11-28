@@ -2,6 +2,7 @@ package vn.farm.farmdevice.entity;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +55,16 @@ public class SensorNode extends AuditableEntity {
 
     @Column(name = "InstalledAt", columnDefinition = "date")
     private LocalDate installedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ConnectionType", length = 10)
+    private ConnectionType connectionType;
+
+    @Column(name = "EndpointUrl", length = 255)
+    private String endpointUrl;
+
+    @Column(name = "LastSeenAt", columnDefinition = "datetime2(0)")
+    private Instant lastSeenAt;
 
     @OneToMany(mappedBy = "node", cascade = CascadeType.ALL, orphanRemoval = true)
     @BatchSize(size = 50)

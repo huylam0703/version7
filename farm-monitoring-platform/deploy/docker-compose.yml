@@ -59,7 +59,7 @@ services:
       - api-gateway
     networks:
       - farm-network
-      
+
   # ================= .NET (3 service) =================
   user-auth-service:
     entrypoint: ["dotnet", "UserAuthService.Api.dll"]
@@ -108,10 +108,10 @@ services:
         DLL_NAME: ApiGatewayService.Api.dll
     depends_on:
       - user-auth-service
-      # - farm-device-service
-      # - mission-service
-      # - sensor-data-service
-      # - alert-service
+      - farm-device-service
+      - mission-service
+      - sensor-data-service
+      - alert-service
       - notification-service
     environment:
       ASPNETCORE_ENVIRONMENT: Development
@@ -129,77 +129,141 @@ services:
       - farm-network
 
   # ================= Java (4 service) =================
-  # farm-device-service:
-  #   build:
-  #     <<: *java-build
-  #     args:
-  #       SERVICE_PATH: services/farm-device-service
-  #   depends_on:
-  #     <<: *wait-db
-  #     rabbitmq:
-  #       condition: service_healthy
-  #   environment:
-  #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=farm_device_db;encrypt=true;trustServerCertificate=true
-  #     SPRING_DATASOURCE_USERNAME: sa
-  #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
-  #     RABBITMQ_HOST: rabbitmq
-  #     RABBITMQ_USER: ${RABBITMQ_USER:-guest}
-  #     RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-  #   ports: ["8082:8080"]
+  farm-device-service:
+     build:
+       <<: *java-build
+       args:
+         SERVICE_PATH: services/farm-device-service
+     depends_on:
+       <<: *wait-db
+       rabbitmq:
+         condition: service_healthy
+     environment:
+       AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
+       
+       SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=farm_device_db;encrypt=true;trustServerCertificate=true
+       SPRING_DATASOURCE_USERNAME: sa
+       SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+       SPRING_RABBITMQ_HOST: rabbitmq
+       SPRING_RABBITMQ_PORT: 5672
+       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+     ports: ["8082:8080"]
+     networks:
+      - farm-network
 
-  # mission-service:
-  #   build:
-  #     <<: *java-build
-  #     args:
-  #       SERVICE_PATH: services/mission-service
-  #   depends_on: 
-  #     <<: *wait-db
-  #     rabbitmq:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   environment:
-  #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=mission_db;encrypt=true;trustServerCertificate=true
-  #     SPRING_DATASOURCE_USERNAME: sa
-  #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
-  #     SPRING_RABBITMQ_HOST: rabbitmq
-  #     SPRING_RABBITMQ_PORT: 5672
-  #     SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
-  #     SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-  #     SPRING_DATA_REDIS_HOST: redis
-  #     SPRING_DATA_REDIS_PORT: 6379
-  #     SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
-  #   ports: ["8083:8080"]
-  #   networks:
-  #     - farm-network
+  mission-service:
+     build:
+       <<: *java-build
+       args:
+         SERVICE_PATH: services/mission-service
+     depends_on:
+       <<: *wait-db
+       rabbitmq:
+         condition: service_healthy
+       redis:
+         condition: service_healthy
+     environment:
+       SERVER_PORT: 8080
+       MISSION_REFERENCE_VALIDATION_MODE: remote
+       FARM_DEVICE_BASE_URL: http://farm-device-service:8080
+       AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
+       SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=mission_db;encrypt=true;trustServerCertificate=true
+       SPRING_DATASOURCE_USERNAME: sa
+       SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+       SPRING_RABBITMQ_HOST: rabbitmq
+       SPRING_RABBITMQ_PORT: 5672
+       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+       SPRING_DATA_REDIS_HOST: redis
+       SPRING_DATA_REDIS_PORT: 6379
+       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+     ports: ["8083:8080"]
+     networks:
+       - farm-network
 
-  # sensor-data-service:
-  #   build:
-  #     <<: *java-build
-  #     args:
-  #       SERVICE_PATH: services/sensor-data-service
-  #   depends_on: *wait-db
-  #   environment:
-  #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=sensor_data_db;encrypt=true;trustServerCertificate=true
-  #     SPRING_DATASOURCE_USERNAME: sa
-  #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
-  #   ports: ["8084:8080"]
-  #   networks:
-  #     - farm-network
 
-  # alert-service:
-  #   build:
-  #     <<: *java-build
-  #     args:
-  #       SERVICE_PATH: services/alert-service
-  #   depends_on: *wait-db
-  #   environment:
-  #     SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=alert_db;encrypt=true;trustServerCertificate=true
-  #     SPRING_DATASOURCE_USERNAME: sa
-  #     SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
-  #   ports: ["8085:8080"]
-  #   networks:
-  #     - farm-network
+
+  uav-gateway-simulator:
+    build:
+      <<: *java-build
+      args:
+        SERVICE_PATH: services/uav-gateway-simulator
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      user-auth-service:
+        condition: service_started
+      farm-device-service:
+        condition: service_started
+      mission-service:
+        condition: service_started
+      sensor-data-service:
+        condition: service_started
+
+    environment:
+      SERVER_PORT: 8080
+
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+
+      MISSION_SERVICE_BASE_URL: http://mission-service:8080/api/v1/mission/missions
+      SENSOR_DATA_BASE_URL: http://sensor-data-service:8080
+      FARM_DEVICE_BASE_URL: http://farm-device-service:8080
+
+      AUTH_TOKEN_URL: http://user-auth-service:8080/oauth2/token
+      AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
+      AUTH_JWT_ISSUER: farm-auth
+      AUTH_JWT_AUDIENCE: farm-api
+
+      UAV_CLIENT_ID: ${UAV_CLIENT_ID}
+      UAV_CLIENT_SECRET: ${UAV_CLIENT_SECRET}
+
+      UAV_TELEMETRY_ENABLED: "true"
+      UAV_TELEMETRY_UPDATE_INTERVAL_MS: "1000"
+      UAV_TELEMETRY_BATTERY_DRAIN: "0.02"
+      UAV_TELEMETRY_INITIAL_BATTERY: "100.0"
+      UAV_TELEMETRY_SSE_INTERVAL_MS: "1000"
+      UAV_TELEMETRY_SSE_TIMEOUT_MS: "0"
+
+    ports:
+      - "127.0.0.1:8087:8080"
+
+    networks:
+      - farm-network
+
+
+
+  sensor-data-service:
+    build:
+      <<: *java-build
+      args:
+        SERVICE_PATH: services/sensor-data-service
+    depends_on: *wait-db
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=sensor_data_db;encrypt=true;trustServerCertificate=true
+      SPRING_DATASOURCE_USERNAME: sa
+      SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports: ["8084:8080"]
+    networks:
+      - farm-network
+
+  alert-service:
+    build:
+      <<: *java-build
+      args:
+        SERVICE_PATH: services/alert-service
+    depends_on: *wait-db
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=alert_db;encrypt=true;trustServerCertificate=true
+      SPRING_DATASOURCE_USERNAME: sa
+      SPRING_DATASOURCE_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports: ["8085:8080"]
+    networks:
+      - farm-network
 
 networks:
   farm-network:

@@ -113,8 +113,10 @@ axiosClient.interceptors.response.use(
     try {
       const refreshToken = getToken('refreshToken')
 
+      // Chưa từng đăng nhập (hoặc đã đăng xuất): không phải "hết hạn phiên"
       if (!refreshToken) {
-        throw new Error('Không tìm thấy Refresh Token')
+        processQueue(error)
+        return Promise.reject(error)
       }
 
       const response = await refreshClient.post(

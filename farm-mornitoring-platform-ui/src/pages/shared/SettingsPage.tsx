@@ -4,12 +4,14 @@ import { useAuth } from '../../AuthContext'
 import { Button, Card, ErrorBox, Input, PageHeader } from '../../components/Ui'
 
 export function SettingsPage() {
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
+  const isAdmin = user?.role === 'ADMIN'
+
   const [fullName, setFullName] = useState(user?.fullName || '')
   const [phone, setPhone] = useState(user?.phone || '')
-  const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -20,18 +22,20 @@ export function SettingsPage() {
       setError('Không tìm thấy thông tin tài khoản.')
       return
     }
+    if (!fullName.trim()) {
+      setError('Họ tên không được để trống.')
+      return
+    }
 
     try {
-      await accountApi.update(user.userId, {
-        fullName,
-        phone,
-        ...(password.trim() ? { password } : {})
-      })
-
+      setSaving(true)
+      await accountApi.updateMe({ fullName: fullName.trim(), phone: phone.trim() || null })
+      await refreshUser()
       setMessage('Cập nhật thông tin thành công.')
-      setPassword('')
     } catch (err) {
       setError(getErrorMessage(err))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -43,10 +47,13 @@ export function SettingsPage() {
           <ErrorBox message={error} />
           {message ? <p className="text-sm text-green-700">{message}</p> : null}
           <Input label="Email" value={user?.email || ''} disabled />
-          <Input label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-          <Input label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <Input label="New password (optional)" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <Button type="submit">Save</Button>
+          <Input label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={!isAdmin} />
+          <Input label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={!isAdmin} />
+          
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+          
         </form>
       </Card>
     </div>

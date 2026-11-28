@@ -266,8 +266,6 @@ export function AppLayout() {
 export function RoleRoute({ roles, children }: { roles: UserRole[]; children: ReactNode }) {
   const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
-  if (!roles.includes(user.role)) {
-    return <Navigate to={homePathByRole(user.role)} replace />
-  }
+  if (!roles.includes(user.role)) return <Navigate to="/403" replace />
   return children
 }

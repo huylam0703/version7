@@ -6,8 +6,9 @@ OpenAPI trong Development tại `/openapi/v1.json`.
 
 ## API web
 
-Các endpoint yêu cầu JWT của user-auth. Chỉ người nhận có thể đọc, sửa hoặc xóa
-thông báo của mình. Endpoint tạo yêu cầu role `ADMIN` và chỉ tạo thông báo web.
+Các endpoint yêu cầu JWT của User Auth. Các thao tác trong hộp thông báo cá nhân
+yêu cầu role `ADMIN` hoặc `OPERATOR` và chỉ áp dụng cho thông báo của người đang
+đăng nhập. Endpoint tạo yêu cầu role `ADMIN` và chỉ tạo thông báo web.
 
 | Method | Endpoint trực tiếp | Chức năng |
 |---|---|---|

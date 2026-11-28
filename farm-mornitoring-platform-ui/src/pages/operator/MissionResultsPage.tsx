@@ -29,7 +29,9 @@ export function MissionResultsPage() {
               <tr key={r.id}>
                 <td className="px-3 py-2">{r.sensorCode || r.sensorNodeId}</td>
                 <td className="px-3 py-2">{r.success ? <Badge color="green">Success</Badge> : <Badge color="red">Failed</Badge>}</td>
-                <td className="px-3 py-2">{r.message || '—'}</td>
+                <td className="px-3 py-2">
+                  {r.message || (r.success ? 'Collected successfully' : 'Collection failed')}
+                </td>
                 <td className="px-3 py-2">{formatDate(r.collectedAt)}</td>
               </tr>
             ))}

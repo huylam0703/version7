@@ -1,0 +1,62 @@
+server:
+  port: 8087
+
+spring:
+  application:
+    name: uav-gateway-simulator
+
+  profiles:
+    active: dev
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+          issuer-uri: ${AUTH_JWT_ISSUER:farm-auth}
+          audiences:
+            - ${AUTH_JWT_AUDIENCE:farm-api}
+
+integration:
+  mission:
+    base-url: ${MISSION_SERVICE_BASE_URL:http://localhost:8083/api/v1/mission/missions}
+  sensor-data:
+    base-url: ${SENSOR_DATA_BASE_URL:http://localhost:8084}
+
+  farm-device:
+    base-url: ${FARM_DEVICE_BASE_URL:http://localhost:8082}
+  auth:
+    token-url: ${AUTH_TOKEN_URL:http://localhost:8081/oauth2/token}
+    client-id: ${UAV_CLIENT_ID:uav-simulator-01}
+    client-secret: ${UAV_CLIENT_SECRET:jK-vShVbyJN52NXetKKvs6vP6DzclY9uzEVca1ZFGGI}
+    scope: "mission:read mission:ack mission:progress mission:heartbeat mission:results"
+
+simulator:
+  id: uav-simulator-01
+  mission:
+    enabled: true
+  results:
+    retry:
+      enabled: true
+      delay-ms: 5000
+      max-attempts: 3
+  recovery:
+    scan-interval-ms: 30000
+
+  flight:
+    waypoint-delay-ms: 15000
+  heartbeat:
+    interval-ms: 10000
+    failure-threshold: 3
+
+  telemetry:
+    enabled: ${UAV_TELEMETRY_ENABLED:true}
+    update-interval-ms: ${UAV_TELEMETRY_UPDATE_INTERVAL_MS:1000}
+    battery-drain-per-second: ${UAV_TELEMETRY_BATTERY_DRAIN:0.02}
+    initial-battery-percent: ${UAV_TELEMETRY_INITIAL_BATTERY:100.0}
+    sse-publish-interval-ms: ${UAV_TELEMETRY_SSE_INTERVAL_MS:1000}
+    sse-timeout-ms: ${UAV_TELEMETRY_SSE_TIMEOUT_MS:0}

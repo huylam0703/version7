@@ -33,4 +33,7 @@ public class MissionProgressRequest {
     @Valid
     @Builder.Default
     List<MissionNodeProgressRequest> nodeResults = List.of();
+
+    private UUID instanceId;
+    private Long recoveryGeneration;
 }

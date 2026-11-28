@@ -1,0 +1,510 @@
+
+package uav_gateway_simulator.service;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
+import uav_gateway_simulator.client.MissionClient;
+import uav_gateway_simulator.dto.*;
+import uav_gateway_simulator.dto.response.MissionAckResponse;
+import uav_gateway_simulator.dto.response.MissionDetailResponse;
+import uav_gateway_simulator.dto.response.MissionResultResponse;
+import uav_gateway_simulator.dto.response.WaypointResponse;
+import uav_gateway_simulator.exception.MissionCancelledException;
+import uav_gateway_simulator.telemetry.FlightOwnershipService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class MissionExecutionServiceTest {
+
+    private MissionClient missionClient;
+    private MissionExecutionService missionExecutionService;
+    private WaypointSimulationService waypointSimulationService;
+    private MissionHeartbeatScheduler heartbeatScheduler;
+    private MissionResultSimulationService missionResultSimulationService;
+    private MissionExecutionTracker executionTracker;
+
+    private UUID missionId;
+    private UUID executionId;
+    private UUID farmId;
+    private UUID uavId;
+    private UUID gatewayId;
+    private UUID nodeId;
+
+    private MissionReadyPayload payload;
+    private MissionDetailResponse mission;
+    private MissionResumePlanner missionResumePlanner;
+    private MissionRecoveryLeaseManager leaseManager;
+
+    @BeforeEach
+    void setUp() {
+        missionClient = mock(MissionClient.class);
+        waypointSimulationService =
+                mock(WaypointSimulationService.class);
+        heartbeatScheduler =
+                mock(MissionHeartbeatScheduler.class);
+        missionResultSimulationService =
+                mock(MissionResultSimulationService.class);
+        executionTracker = new MissionExecutionTracker();
+        missionResumePlanner = mock(MissionResumePlanner.class);
+        leaseManager = mock(MissionRecoveryLeaseManager.class);
+        MissionCancellationService cancellationService =
+                mock(MissionCancellationService.class);
+        RecoveryLeaseRegistry leaseRegistry =
+                new RecoveryLeaseRegistry();
+
+        missionExecutionService = new MissionExecutionService(
+                missionClient,
+                waypointSimulationService,
+                heartbeatScheduler,
+                missionResultSimulationService,
+                executionTracker,
+                missionResumePlanner,
+                leaseManager,
+                cancellationService,
+                new FlightOwnershipService(leaseRegistry)
+        );
+
+        missionId = UUID.randomUUID();
+        executionId = UUID.randomUUID();
+        assertTrue(executionTracker.tryStart(executionId));
+        farmId = UUID.randomUUID();
+        uavId = UUID.randomUUID();
+        gatewayId = UUID.randomUUID();
+        nodeId = UUID.randomUUID();
+
+        payload = new MissionReadyPayload();
+        payload.setMissionId(missionId);
+        payload.setExecutionId(executionId);
+        payload.setFarmId(farmId);
+        payload.setUavId(uavId);
+        payload.setGatewayId(gatewayId);
+        payload.setAckDeadline(
+                Instant.now().plusSeconds(90)
+        );
+
+        WaypointResponse waypoint = new WaypointResponse(
+                UUID.randomUUID(),
+                1,
+                new BigDecimal("10.123"),
+                new BigDecimal("106.123"),
+                new BigDecimal("20"),
+                "PENDING",
+                List.of(nodeId)
+        );
+
+        mission = new MissionDetailResponse(
+                missionId,
+                farmId,
+                uavId,
+                gatewayId,
+                "Test Mission",
+                "test-user",
+                null,
+                "RUNNING",
+                null,
+                null,
+                null,
+                1,
+                0,
+                0,
+                List.of(waypoint),
+                List.of(nodeId)
+        );
+    }
+
+    private void stubSuccessfulAck() {
+        when(missionClient.getMissionDetail(missionId))
+                .thenReturn(mission);
+
+        when(missionClient.ackMission(
+                missionId,
+                executionId
+        )).thenReturn(
+                new MissionAckResponse(
+                        missionId,
+                        executionId,
+                        "EXECUTING",
+                        Instant.now()
+                )
+        );
+    }
+
+    private void stubSuccessfulResults() {
+        when(missionResultSimulationService.simulateResults(
+                eq(missionId),
+                eq(executionId),
+                eq(List.of(nodeId)),
+                eq(new FlightOwnershipToken(
+                        executionId, null, null
+                ))
+        )).thenReturn(
+                new MissionResultResponse(
+                        missionId,
+                        executionId,
+                        "COMPLETED",
+                        1,
+                        1,
+                        0
+                )
+        );
+    }
+
+    @Test
+    void shouldExecuteCompleteMissionFlowInOrder() {
+        stubSuccessfulAck();
+        stubSuccessfulResults();
+
+        assertDoesNotThrow(
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        InOrder inOrder = inOrder(
+                missionClient,
+                heartbeatScheduler,
+                waypointSimulationService,
+                missionResultSimulationService
+        );
+
+        inOrder.verify(missionClient)
+                .getMissionDetail(missionId);
+
+        inOrder.verify(missionClient)
+                .ackMission(missionId, executionId);
+
+        inOrder.verify(heartbeatScheduler)
+                .start(
+                        eq(missionId),
+                        eq(executionId),
+                        any(FlightOwnershipToken.class)
+                );
+
+        inOrder.verify(waypointSimulationService)
+                .simulate(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
+                );
+
+        inOrder.verify(missionResultSimulationService)
+                .simulateResults(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(List.of(nodeId)),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
+                );
+
+        inOrder.verify(heartbeatScheduler)
+                .stop(any(FlightOwnershipToken.class));
+
+        inOrder.verifyNoMoreInteractions();
+    }
+
+    @Test
+    void shouldNotSendResultsWhenWaypointSimulationFails() {
+        stubSuccessfulAck();
+
+        doThrow(new IllegalStateException(
+                "Waypoint simulation failed"
+        )).when(waypointSimulationService)
+                .simulate(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
+                );
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        assertEquals(
+                "Waypoint simulation failed",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(missionResultSimulationService);
+
+        verify(heartbeatScheduler)
+                .stop(any(FlightOwnershipToken.class));
+    }
+
+    @Test
+    void shouldStopHeartbeatWhenSendingResultsFails() {
+        stubSuccessfulAck();
+
+        when(missionResultSimulationService.simulateResults(
+                eq(missionId),
+                eq(executionId),
+                eq(List.of(nodeId)),
+                eq(new FlightOwnershipToken(
+                        executionId, null, null
+                ))
+        )).thenThrow(
+                new IllegalStateException(
+                        "Mission Results failed"
+                )
+        );
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        assertEquals(
+                "Mission Results failed",
+                exception.getMessage()
+        );
+
+        verify(waypointSimulationService)
+                .simulate(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
+                );
+
+        verify(heartbeatScheduler)
+                .stop(any(FlightOwnershipToken.class));
+    }
+
+    @Test
+    void shouldRejectMissionWithoutNodesBeforeAck() {
+        mission = new MissionDetailResponse(
+                missionId,
+                farmId,
+                uavId,
+                gatewayId,
+                "Test Mission",
+                "test-user",
+                null,
+                "RUNNING",
+                null,
+                null,
+                null,
+                0,
+                0,
+                0,
+                mission.waypoints(),
+                List.of()
+        );
+
+        when(missionClient.getMissionDetail(missionId))
+                .thenReturn(mission);
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        assertEquals(
+                "Mission has no nodes",
+                exception.getMessage()
+        );
+
+        verify(missionClient, never())
+                .ackMission(any(), any());
+
+        verifyNoInteractions(
+                heartbeatScheduler,
+                waypointSimulationService,
+                missionResultSimulationService
+        );
+    }
+
+
+    @Test
+    void shouldRejectInvalidResultsResponse() {
+        stubSuccessfulAck();
+
+        when(missionResultSimulationService.simulateResults(
+                eq(missionId),
+                eq(executionId),
+                eq(List.of(nodeId)),
+                eq(new FlightOwnershipToken(
+                        executionId, null, null
+                ))
+        )).thenReturn(
+                new MissionResultResponse(
+                        missionId,
+                        executionId,
+                        "RUNNING",
+                        1,
+                        0,
+                        1
+                )
+        );
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        assertTrue(
+                exception.getMessage().contains(
+                        "Invalid final Mission status"
+                )
+        );
+
+        assertEquals(
+                MissionExecutionTracker.Status.RESULTS_RETRY,
+                executionTracker.getStatus(executionId)
+        );
+
+        verify(heartbeatScheduler)
+                .stop(any(FlightOwnershipToken.class));
+    }
+
+
+    @Test
+    void shouldRejectExpiredAckDeadline() {
+        payload.setAckDeadline(
+                Instant.now().minusSeconds(1)
+        );
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        verifyNoInteractions(
+                missionClient,
+                heartbeatScheduler,
+                waypointSimulationService,
+                missionResultSimulationService
+        );
+    }
+
+    @Test
+    void shouldKeepResultsPendingUntilProcessingCompletes() {
+        stubSuccessfulAck();
+        stubSuccessfulResults();
+
+        assertDoesNotThrow(
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        assertEquals(
+                MissionExecutionTracker.Status.RESULTS_PENDING,
+                executionTracker.getStatus(executionId)
+        );
+
+        verify(missionResultSimulationService, times(1))
+                .simulateResults(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(List.of(nodeId)),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
+                );
+
+        verify(heartbeatScheduler, times(1))
+                .stop(eq(new FlightOwnershipToken(
+                        executionId, null, null
+                )));
+    }
+
+
+    @Test
+    void shouldMarkResultsRetryWhenSendingResultsFails() {
+        stubSuccessfulAck();
+
+        when(missionResultSimulationService.simulateResults(
+                eq(missionId),
+                eq(executionId),
+                eq(List.of(nodeId)),
+                eq(new FlightOwnershipToken(
+                        executionId, null, null
+                ))
+        )).thenThrow(
+                new IllegalStateException(
+                        "Simulated Results failure"
+                )
+        );
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        assertEquals(
+                "Simulated Results failure",
+                exception.getMessage()
+        );
+
+        assertEquals(
+                MissionExecutionTracker.Status.RESULTS_RETRY,
+                executionTracker.getStatus(executionId)
+        );
+
+        verify(waypointSimulationService, times(1))
+                .simulate(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
+                );
+
+        verify(heartbeatScheduler, times(1))
+                .stop(eq(new FlightOwnershipToken(
+                        executionId, null, null
+                )));
+    }
+    @Test
+    void shouldStopHeartbeatAndSkipResultsWhenMissionCancelled() {
+        stubSuccessfulAck();
+
+        doThrow(new MissionCancelledException("Mission cancelled"))
+                .when(waypointSimulationService)
+                .simulate(
+                        eq(missionId),
+                        eq(executionId),
+                        eq(mission.waypoints()),
+                        eq(new FlightOwnershipToken(
+                                executionId, null, null
+                        ))
+                );
+
+        assertThrows(
+                MissionCancelledException.class,
+                () -> missionExecutionService.prepareMission(payload)
+        );
+
+        verify(heartbeatScheduler)
+                .start(
+                        eq(missionId),
+                        eq(executionId),
+                        any(FlightOwnershipToken.class)
+                );
+
+        verify(heartbeatScheduler)
+                .stop(any(FlightOwnershipToken.class));
+
+        verifyNoInteractions(missionResultSimulationService);
+
+        assertEquals(
+                MissionExecutionTracker.Status.PROCESSING,
+                executionTracker.getStatus(executionId)
+        );
+    }
+}

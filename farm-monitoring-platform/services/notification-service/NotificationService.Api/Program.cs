@@ -1,4 +1,4 @@
-
+using Microsoft.OpenApi;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -21,6 +21,22 @@ builder.Services.AddOpenApi();
 builder.Services.AddHostedService<NotificationEventConsumer>();
 builder.Services.AddHostedService<NotificationEmailWorker>();
 builder.Services.AddHttpClient();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Dán access token (không cần gõ chữ Bearer)"
+    });
+
+    c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+    });
+});
 builder.Services.AddScoped<NotificationRecipients>();
 builder.Services.AddScoped<NotificationEventProcessor>();
 
@@ -91,10 +107,10 @@ using (var scope = app.Services.CreateScope())
 // ========================================
 // 6. OpenAPI
 // ========================================
-
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 // ========================================

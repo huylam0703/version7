@@ -17,9 +17,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.farm.core.BusinessException;
+import java.time.Instant;
+import vn.farm.farmdevice.common.ConnectionRules;
 import vn.farm.farmdevice.common.GeoRules;
 import vn.farm.farmdevice.dto.SensorDtos.ChannelRequest;
 import vn.farm.farmdevice.dto.SensorDtos.CreateNodeRequest;
+import vn.farm.farmdevice.dto.SensorDtos.NodeConnectionResponse;
 import vn.farm.farmdevice.dto.SensorDtos.NodeResponse;
 import vn.farm.farmdevice.dto.SensorDtos.RotateCredentialResponse;
 import vn.farm.farmdevice.dto.SensorDtos.UpdateNodeRequest;
@@ -54,6 +57,8 @@ public class SensorNodeService {
         if (zone.getStatus() != FarmStatus.ACTIVE)
             throw BusinessException.conflict("ZONE_INACTIVE", "Khu vực đã ngưng hoạt động.");
         GeoRules.checkPoint(r.lat(), r.lng());
+        String endpoint = blankToNull(r.endpointUrl());
+        ConnectionRules.check(r.connectionType(), endpoint);
 
         Set<UUID> typeIds = new HashSet<>();
         for (ChannelRequest c : r.channels()) {
@@ -74,6 +79,8 @@ public class SensorNodeService {
         n.setLng(Mappers.dec(r.lng()));
         n.setFirmwareVer(r.firmwareVer());
         n.setInstalledAt(r.installedAt());
+        n.setConnectionType(r.connectionType());
+        n.setEndpointUrl(endpoint);
         for (ChannelRequest c : r.channels()) {
             NodeChannel ch = new NodeChannel();
             ch.setNode(n);
@@ -125,7 +132,48 @@ public class SensorNodeService {
         if (r.firmwareVer() != null) n.setFirmwareVer(r.firmwareVer());
         if (r.installedAt() != null) n.setInstalledAt(r.installedAt());
         if (r.status() != null) n.setStatus(r.status());
+        applyConnection(n, r);
+        if (r.lastSeenAt() != null) {
+            if (r.lastSeenAt().isAfter(Instant.now().plusSeconds(300)))
+                throw BusinessException.invalid("VALIDATION_FAILED", "lastSeenAt không được ở tương lai.");
+            n.setLastSeenAt(r.lastSeenAt());
+        }
         return Mappers.toDto(nodes.save(n));
+    }
+
+    /** Chỉ endpoint/connectionType: gửi endpointUrl="" để xoá; chỉ gửi một trong hai thì ghép với giá trị đang lưu rồi kiểm tra. */
+    private void applyConnection(SensorNode n, UpdateNodeRequest r) {
+        if (r.connectionType() == null && r.endpointUrl() == null) return;
+        if (r.endpointUrl() != null && r.endpointUrl().isBlank()) {
+            if (r.connectionType() != null)
+                throw BusinessException.invalid("INVALID_ENDPOINT", "Xoá endpoint thì không gửi kèm connectionType.");
+            n.setEndpointUrl(null);
+            n.setConnectionType(null);
+            return;
+        }
+        var type = r.connectionType() != null ? r.connectionType() : n.getConnectionType();
+        var url = r.endpointUrl() != null ? r.endpointUrl().trim() : n.getEndpointUrl();
+        ConnectionRules.check(type, url);
+        n.setConnectionType(type);
+        n.setEndpointUrl(url);
+    }
+
+    /**
+     * Simulator hỏi endpoint của node. Thứ tự kiểm tra: không tồn tại (404) → không ACTIVE (409) → chưa có endpoint (404).
+     */
+    @Transactional(readOnly = true)
+    public NodeConnectionResponse connection(UUID nodeId) {
+        SensorNode n = getEntity(nodeId);
+        if (n.getStatus() != NodeStatus.ACTIVE)
+            throw BusinessException.conflict("NODE_NOT_ACTIVE", "Node không ở trạng thái ACTIVE (hiện là " + n.getStatus() + ").");
+        if (n.getEndpointUrl() == null || n.getConnectionType() == null)
+            throw BusinessException.notFound("NODE_ENDPOINT_NOT_SET", "Node chưa được cấu hình endpoint kết nối.");
+        return new NodeConnectionResponse(n.getId(), n.getDeviceUid(), n.getConnectionType(),
+                n.getEndpointUrl(), n.getStatus(), n.getLastSeenAt());
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     /** Đổi khóa xác thực; chỉ lưu hash, không log khóa. */

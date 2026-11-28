@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { alertApi, dashboardApi, farmApi, getErrorMessage, missionApi } from '../../api'
+import { farmApi } from '../../api/farm-device/farmApi'
+import { alertApi, dashboardApi, getErrorMessage, missionApi } from '../../api'
 import type { AlertItem, Farm, Mission } from '../../types'
 import { Card, ErrorBox, PageHeader, Select, StatCard, Table, alertBadge, missionBadge } from '../../components/Ui'
 import { formatDate } from '../../helpers'

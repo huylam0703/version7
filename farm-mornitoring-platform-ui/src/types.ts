@@ -135,6 +135,8 @@ export type Uav = {
   batteryPercent?: number
   latitude?: number
   longitude?: number
+  farmId?: string
+  maxFlightMin?: number
 }
 
 export type Gateway = {
@@ -144,13 +146,19 @@ export type Gateway = {
   uavId?: string
   uavName?: string
   status?: string
+  hwModel?: string
+  firmwareVer?: string
+  storageMb?: number
 }
 
 export type MissionStatus =
+  | 'draft'
   | 'planned'
+  | 'running'
   | 'inProgress'
   | 'paused'
   | 'completed'
+  | 'partial'
   | 'failed'
   | 'cancelled'
 

@@ -11,28 +11,91 @@ import type {
 } from './types'
 import { mockApi } from './mockStore'
 import axiosClient from './api/axiosClient'
-import type { NotificationItem } from './types'
+import type { NotificationItem , MissionStatus } from './types'
+import { missionApi } from './api/operator/missionApi'
+
+// ===== Kiểu dữ liệu backend farm-device trả về =====
+type Page<T> = { items: T[]; page: number; pageSize: number; total: number }
+
+type FarmDto = {
+  farmId: string
+  name: string
+  address?: string
+  centerLat?: number
+  centerLng?: number
+  areaHa?: number
+  description?: string
+  status: string
+}
+type ZoneDto = {
+  zoneId: string
+  farmId: string
+  code: string
+  name: string
+  cropType?: string
+  centerLat?: number
+  centerLng?: number
+  status: string
+}
+type UavDto = { uavId: string; farmId: string; serialNo: string; name: string; model?: string; status: string }
+
+type MissionDetailDto = {
+  missionId: string
+  farmId: string
+  uavId: string
+  gatewayId: string
+  name: string
+  createdBy: string
+  notes?: string
+  status: string
+  plannedAt?: string
+  startedAt?: string
+  endedAt?: string
+  totalNodes: number
+  successNodes: number
+  failedNodes: number
+  waypoints?: {
+    latitude: number
+    longitude: number
+    order: number
+    sensorNodeId?: string
+  }[]
+  nodeIds?: string[]
+}
+
+
+
+// ===== Hàm dùng chung =====
+const toStatus = (active?: boolean) => (active === false ? 'INACTIVE' : 'ACTIVE')
+const lower = (s?: string) => s?.toLowerCase()
+const upper = (s?: string) => s?.toUpperCase().replace(/-/g, '_')
+
+async function listAll<T>(url: string, params?: object): Promise<T[]> {
+  const res = await axiosClient.get<Page<T>>(url, { params: { ...params, page: 1, pageSize: 100 } })
+  return res.data.items
+}
+
+async function firstFarmId() {
+  const farms = await listAll<FarmDto>('/v1/farms')
+  if (!farms.length) throw new Error('Hãy tạo ít nhất một Farm trước.')
+  return farms[0].farmId
+}
 
 export function getErrorMessage(error: unknown) {
+  const data = (error as { response?: { data?: { detail?: string; title?: string; message?: string } } })?.response
+    ?.data
+  if (data?.detail || data?.title || data?.message) return (data.detail || data.title || data.message) as string
   if (error instanceof Error && error.message) return error.message
   return 'Something went wrong'
 }
 
-export const farmApi = {
-  list: () => mockApi.farms.list(),
-  get: (id: string) => mockApi.farms.get(id),
-  create: (body: Partial<Farm>) => mockApi.farms.create(body),
-  update: (id: string, body: Partial<Farm>) => mockApi.farms.update(id, body),
-  setActive: (id: string, isActive: boolean) => mockApi.farms.setActive(id, isActive),
-}
+// ===== Farm =====
 
-export const zoneApi = {
-  list: (farmId?: string) => mockApi.zones.list(farmId),
-  create: (body: Partial<Zone>) => mockApi.zones.create(body),
-  update: (id: string, body: Partial<Zone>) => mockApi.zones.update(id, body),
-  setActive: (id: string, isActive: boolean) => mockApi.zones.setActive(id, isActive),
-}
 
+// ===== Zone =====
+
+
+// ===== Sensor (vẫn dùng dữ liệu giả, chưa nối) =====
 export const sensorApi = {
   list: (params?: object) => mockApi.sensors.list(params as { farmId?: string; zoneId?: string; sensorType?: string }),
   create: (body: Partial<SensorNode>) => mockApi.sensors.create(body),
@@ -69,31 +132,15 @@ export const reportApi = {
   summary: (_params?: object) => mockApi.reports.summary(),
 }
 
+// ===== UAV =====
 
 
-export const uavApi = {
-  list: () => mockApi.uavs.list(),
-  create: (body: Partial<Uav>) => mockApi.uavs.create(body),
-  update: (id: string, body: Partial<Uav>) => mockApi.uavs.update(id, body),
-}
+// ===== Gateway =====
 
-export const gatewayApi = {
-  list: () => mockApi.gateways.list(),
-  create: (body: Partial<Gateway>) => mockApi.gateways.create(body),
-  update: (id: string, body: Partial<Gateway>) => mockApi.gateways.update(id, body),
-}
-
-export const missionApi = {
-  list: () => mockApi.missions.list(),
-  get: (id: string) => mockApi.missions.get(id),
-  create: (body: Partial<Mission>) => mockApi.missions.create(body),
-  update: (id: string, body: Partial<Mission>) => mockApi.missions.updateStatus(id, body.status || 'planned', body.notes),
-  updateStatus: (id: string, status: string, notes?: string) =>
-    mockApi.missions.updateStatus(id, status as Mission['status'], notes),
-  results: (id: string) => mockApi.missions.results(id),
-}
 
 export const dashboardApi = {
   admin: (params?: object) => mockApi.dashboard.admin(params as { farmId?: string; range?: string }),
   operator: () => mockApi.dashboard.operator(),
 }
+
+export { missionApi }

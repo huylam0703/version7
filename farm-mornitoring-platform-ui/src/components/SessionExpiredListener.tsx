@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 
 export default function SessionExpiredListener() {
   const [visible, setVisible] = useState(false)
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const { logout } = useAuth()
 
   useEffect(() => {
     const handleExpired = () => {
       void logout()
+
       setVisible(true)
     }
 
@@ -20,12 +22,17 @@ export default function SessionExpiredListener() {
     }
   }, [logout])
 
+  // Ở trang login thì không hiện popup (tắt luôn nếu đang hiện)
+  useEffect(() => {
+    if (pathname === '/login') setVisible(false)
+  }, [pathname])
+
   const handleLogin = () => {
     setVisible(false)
     navigate('/login', { replace: true })
   }
 
-  if (!visible) return null
+  if (!visible || pathname === '/login') return null
 
   return (
     <div className="session-modal-overlay">

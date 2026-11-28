@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { farmApi, getErrorMessage, sensorApi, zoneApi } from '../../api'
+import { farmApi } from '../../api/farm-device/farmApi'
+import { zoneApi } from '../../api/farm-device/zoneApi'
+import { getErrorMessage, sensorApi } from '../../api'
 import type { Farm, SensorNode, SensorType, Zone } from '../../types'
 import { SENSOR_TYPE_LABEL } from '../../types'
 import { Card, ErrorBox, PageHeader, Select, sensorStatusBadge } from '../../components/Ui'

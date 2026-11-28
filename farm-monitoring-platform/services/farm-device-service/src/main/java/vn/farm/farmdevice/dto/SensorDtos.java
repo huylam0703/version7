@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import vn.farm.farmdevice.entity.ConnectionType;
 import vn.farm.farmdevice.entity.NodeStatus;
 
 public final class SensorDtos {
@@ -36,6 +37,8 @@ public final class SensorDtos {
             @DecimalMin("-180") @DecimalMax("180") Double lng,
             @Size(max = 20) String firmwareVer,
             LocalDate installedAt,
+            ConnectionType connectionType,
+            @Size(max = 255) String endpointUrl,
             @NotEmpty @Valid List<ChannelRequest> channels) {}
 
     public record UpdateNodeRequest(
@@ -45,7 +48,11 @@ public final class SensorDtos {
             @DecimalMin("-180") @DecimalMax("180") Double lng,
             @Size(max = 20) String firmwareVer,
             NodeStatus status,
-            LocalDate installedAt) {}
+            LocalDate installedAt,
+            ConnectionType connectionType,
+            /** Chuỗi rỗng = xoá endpoint (đồng thời xoá connectionType). */
+            @Size(max = 255) String endpointUrl,
+            Instant lastSeenAt) {}
 
     public record RotateCredentialRequest(@NotBlank @Size(min = 16, max = 72) String newAuthKey) {}
 
@@ -57,5 +64,10 @@ public final class SensorDtos {
     public record NodeResponse(
             UUID nodeId, UUID zoneId, UUID farmId, String deviceUid, String name,
             Double lat, Double lng, String firmwareVer, NodeStatus status, LocalDate installedAt,
+            ConnectionType connectionType, String endpointUrl, Instant lastSeenAt,
             List<ChannelResponse> channels, Instant createdAt, Instant updatedAt) {}
+
+    /** Response của GET /api/v1/nodes/{nodeId}/connection (Simulator dùng). */
+    public record NodeConnectionResponse(UUID nodeId, String deviceUid, ConnectionType connectionType,
+                                         String endpointUrl, NodeStatus status, Instant lastSeenAt) {}
 }

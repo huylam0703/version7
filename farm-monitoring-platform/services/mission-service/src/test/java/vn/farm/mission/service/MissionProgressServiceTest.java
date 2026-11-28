@@ -1,4 +1,3 @@
-
 package vn.farm.mission.service;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +34,12 @@ class MissionProgressServiceTest {
 
     @Mock
     private MissionNodeRepository missionNodeRepository;
+
+    @Mock
+    private MissionExecutionLockService executionLockService;
+
+    @Mock
+    private MissionRecoveryOwnershipValidator ownershipValidator;
 
     @InjectMocks
     private MissionProgressService progressService;
@@ -78,6 +83,7 @@ class MissionProgressServiceTest {
         node = MissionNode.builder()
                 .missionNodeId(UUID.randomUUID())
                 .mission(mission)
+                .waypoint(waypoint)
                 .nodeId(nodeId)
                 .result("PENDING")
                 .build();
@@ -101,9 +107,9 @@ class MissionProgressServiceTest {
     }
 
     private void mockExecution() {
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.of(execution));
+        when(executionLockService.lock(
+                missionId, executionId
+        )).thenReturn(execution);
     }
 
     private void mockWaypoint() {
@@ -146,9 +152,12 @@ class MissionProgressServiceTest {
     @Test
     void TC02_executionNotFound() {
 
-        when(executionRepository.findForProgress(
-                executionId, missionId
-        )).thenReturn(Optional.empty());
+        when(executionLockService.lock(
+                missionId, executionId
+        )).thenThrow(BusinessException.notFound(
+                "EXECUTION_NOT_FOUND",
+                "Không tìm thấy Mission Execution"
+        ));
 
         assertThrows(
                 BusinessException.class,
@@ -262,6 +271,7 @@ class MissionProgressServiceTest {
                 () -> progressService.getProgress(missionId)
         );
     }
+
     @Test
     void TC10_getProgress_calculatePercentage() {
 
@@ -301,6 +311,7 @@ class MissionProgressServiceTest {
         assertEquals(1, response.getProcessedNodes());
         assertEquals(58.33, response.getProgressPercent(), 0.01);
     }
+
     @Test
     void TC11_getProgress_returnDetails() {
 
@@ -329,6 +340,7 @@ class MissionProgressServiceTest {
         assertEquals(nodeId,
                 response.getNodes().get(0).getNodeId());
     }
+
     @Test
     void TC12_nodeNotFound() {
         mockExecution();
@@ -349,6 +361,7 @@ class MissionProgressServiceTest {
         verify(executionRepository, never()).save(any());
         verify(waypointRepository, never()).save(any());
     }
+
     @Test
     void TC13_waypointAlreadyReached() {
         waypoint.setStatus("REACHED");
@@ -365,6 +378,7 @@ class MissionProgressServiceTest {
 
         verifyNoInteractions(missionNodeRepository);
     }
+
     @Test
     void TC14_progressWithoutNodes() {
         request.setNodeResults(List.of());
@@ -383,6 +397,7 @@ class MissionProgressServiceTest {
         verify(waypointRepository).save(waypoint);
         verify(executionRepository).save(execution);
     }
+
     @Test
     void TC15_invalidSequenceDoesNotUpdateExecution() {
         execution.setLastConfirmedSequence(2L);
@@ -400,6 +415,7 @@ class MissionProgressServiceTest {
         verify(executionRepository, never()).save(any());
         verifyNoInteractions(waypointRepository, missionNodeRepository);
     }
+
     @Test
     void TC16_getProgress_noProgress() {
         when(executionRepository.findByMission_MissionId(missionId))
@@ -463,4 +479,86 @@ class MissionProgressServiceTest {
         assertEquals(100.0, response.getProgressPercent(), 0.01);
     }
 
+    @Test
+    void TC19_simulatorAssignedClient_success() {
+        String clientId = "uav-simulator-01";
+        execution.setAssignedClientId(clientId);
+        mockExecution();
+        mockWaypoint();
+        mockNode();
+
+        MissionProgressResponse response = progressService.updateProgress(missionId, request, clientId);
+
+        assertNotNull(response);
+        assertEquals(missionId, response.getMissionId());
+        assertEquals(executionId, response.getExecutionId());
+        assertEquals(1L, response.getLastConfirmedSequence());
+        assertEquals("REACHED", waypoint.getStatus());
+        assertEquals("SUCCESS", node.getResult());
+        verify(waypointRepository).save(waypoint);
+        verify(missionNodeRepository).saveAll(List.of(node));
+        verify(executionRepository).save(execution);
+    }
+
+    @Test
+    void TC20_simulatorNotAssigned_rejectedWithoutChanges() {
+        execution.setAssignedClientId("uav-simulator-01");
+        mockExecution();
+
+        assertThrows(BusinessException.class,
+                () -> progressService.updateProgress(missionId, request, "other-simulator"));
+
+        assertEquals(0L, execution.getLastConfirmedSequence());
+        assertEquals("PENDING", waypoint.getStatus());
+        assertEquals("PENDING", node.getResult());
+        verify(executionRepository, never()).save(any());
+        verifyNoInteractions(waypointRepository, missionNodeRepository);
+    }
+
+    @Test
+    void TC21_simulatorClientIdMissing_rejectedBeforeDatabaseAccess() {
+        assertThrows(BusinessException.class,
+                () -> progressService.updateProgress(missionId, request, (String) null));
+        assertThrows(BusinessException.class,
+                () -> progressService.updateProgress(missionId, request, ""));
+        assertThrows(BusinessException.class,
+                () -> progressService.updateProgress(missionId, request, "   "));
+
+    }
+    @Test
+    void TC22_nodeAssignedToDifferentWaypoint_shouldReject() {
+
+        Waypoint otherWaypoint = Waypoint.builder()
+                .waypointId(UUID.randomUUID())
+                .mission(mission)
+                .seq((short) 2)
+                .status("PENDING")
+                .build();
+
+        node.setWaypoint(otherWaypoint);
+
+        mockExecution();
+        mockWaypoint();
+        mockNode();
+
+        assertThrows(
+                BusinessException.class,
+                () -> progressService.updateProgress(
+                        missionId, request
+                )
+        );
+
+        assertEquals("PENDING", node.getResult());
+        assertEquals("PENDING", waypoint.getStatus());
+        assertEquals(0L, execution.getLastConfirmedSequence());
+
+        verify(missionNodeRepository, never())
+                .saveAll(anyList());
+
+        verify(waypointRepository, never())
+                .save(any());
+
+        verify(executionRepository, never())
+                .save(any());
+    }
 }

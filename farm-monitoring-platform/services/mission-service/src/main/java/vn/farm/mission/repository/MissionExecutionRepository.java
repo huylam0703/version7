@@ -8,7 +8,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import vn.farm.mission.entity.MissionExecution;
 import vn.farm.mission.entity.MissionExecutionStatus;
+import vn.farm.mission.entity.MissionStatus;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,4 +67,51 @@ public interface MissionExecutionRepository
             @Param("executionId") UUID executionId,
             @Param("missionId") UUID missionId
     );
+
+
+    @Query("""
+    SELECT e
+    FROM MissionExecution e
+    JOIN FETCH e.mission m
+    WHERE e.assignedClientId = :clientId
+      AND e.status = :executionStatus
+      AND m.status = :missionStatus
+      AND COALESCE(
+          e.lastHeartbeatAt,
+          e.acknowledgedAt,
+          e.startedAt
+      ) < :heartbeatCutoff
+    """)
+    List<MissionExecution> findRecoveryCandidates(
+            @Param("clientId") String clientId,
+            @Param("executionStatus")
+            MissionExecutionStatus executionStatus,
+            @Param("missionStatus")
+            MissionStatus missionStatus,
+            @Param("heartbeatCutoff")
+            Instant heartbeatCutoff
+    );
+
+
+    @Query("""
+    SELECT e.executionId
+    FROM MissionExecution e
+    JOIN e.mission m
+    WHERE e.status = :executionStatus
+      AND m.status = :missionStatus
+      AND COALESCE(
+          e.lastHeartbeatAt,
+          e.acknowledgedAt,
+          e.startedAt
+      ) < :timeoutCutoff
+    """)
+    List<UUID> findHeartbeatTimeoutCandidates(
+            @Param("executionStatus")
+            MissionExecutionStatus executionStatus,
+            @Param("missionStatus")
+            MissionStatus missionStatus,
+            @Param("timeoutCutoff")
+            Instant timeoutCutoff
+    );
+
 }

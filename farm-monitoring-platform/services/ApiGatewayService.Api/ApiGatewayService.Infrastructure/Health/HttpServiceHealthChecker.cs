@@ -56,7 +56,11 @@ public sealed class HttpServiceHealthChecker : IServiceHealthChecker
     private async Task<ServiceHealth> CheckOneAsync(string name, string address, CancellationToken ct)
     {
         var client = _factory.CreateClient("health");
-        var url = new Uri(new Uri(address), "health/ready");
+        var healthPath = name == "uav-simulator"
+            ? "actuator/health"
+            : "health/ready";
+
+        var url = new Uri(new Uri(address), healthPath);
         var sw = Stopwatch.StartNew();
         try
         {
