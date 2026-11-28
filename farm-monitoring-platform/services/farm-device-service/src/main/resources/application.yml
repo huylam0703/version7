@@ -13,11 +13,20 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
   flyway:
     enabled: true
     locations: classpath:db/farm-starter,classpath:db/farm-device
     baseline-on-migrate: true
     baseline-version: 0
+
+farm:
+  security:
+    enabled: ${FARM_SECURITY_ENABLED:true}
 
 management:
   health:
