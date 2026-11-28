@@ -30,6 +30,8 @@ public class NotificationWriteService : INotificationService
     {
         var ownedNotification = _context.Notifications
             .Where(n => n.Id == notificationId && n.UserId == userId);
+
+        // Only the first update sets ReadAt, even when requests run concurrently.
         var updated = await ownedNotification
             .Where(n => !n.IsRead)
             .ExecuteUpdateAsync(

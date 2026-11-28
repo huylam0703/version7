@@ -278,7 +278,12 @@ try {
   assert.equal((await inbox()).find(item => item.id === notificationId).type, 'SYSTEM');
   assert.equal((await api(app, `/${notificationId}/read`, 'PATCH', otherToken)).status, 404);
   assert.equal((await api(app, `/${notificationId}`, 'DELETE', otherToken)).status, 404);
-  assert.equal((await api(app, `/${notificationId}/read`, 'PATCH', recipientToken)).status, 200);
+  assert.equal(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE Id='${notificationId}' AND IsRead=0 AND ReadAt IS NULL`)), 1);
+  const readResponses = await Promise.all([
+    api(app, `/${notificationId}/read`, 'PATCH', recipientToken),
+    api(app, `/${notificationId}/read`, 'PATCH', recipientToken),
+  ]);
+  assert.deepEqual(readResponses.map(response => response.status), [200, 200]);
   const readAt = (await inbox()).find(item => item.id === notificationId).readAt;
   assert(readAt);
   assert.equal((await api(app, `/${notificationId}/read`, 'PATCH', recipientToken)).status, 200);

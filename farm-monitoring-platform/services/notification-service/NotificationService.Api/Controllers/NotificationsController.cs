@@ -108,7 +108,10 @@ public class NotificationsController : ControllerBase
             return Unauthorized();
 
         if (dto.UserId == Guid.Empty)
-            return BadRequest("UserId không hợp lệ.");
+        {
+            ModelState.AddModelError(nameof(dto.UserId), "UserId không hợp lệ.");
+            return ValidationProblem(ModelState);
+        }
 
         var notification = new Notification
         {
@@ -147,7 +150,7 @@ public class NotificationsController : ControllerBase
             id, userId.Value, cancellationToken);
 
         if (!updated)
-            return NotFound("Không tìm thấy thông báo.");
+            return Problem(statusCode: 404, title: "Không tìm thấy thông báo.");
 
         return Ok(new NotificationReadResponse("Đã đánh dấu đã đọc"));
     }
@@ -192,7 +195,7 @@ public class NotificationsController : ControllerBase
             id, userId.Value, cancellationToken);
 
         if (!deleted)
-            return NotFound("Không tìm thấy thông báo.");
+            return Problem(statusCode: 404, title: "Không tìm thấy thông báo.");
 
         return NoContent();
     }
