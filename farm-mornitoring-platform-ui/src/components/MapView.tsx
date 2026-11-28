@@ -15,7 +15,9 @@ L.Marker.prototype.options.icon = defaultIcon
 
 function FitPoints({ points }: { points: Point[] }) {
   const map = useMap()
-  const signature = points.map((point) => point.id).join(',')
+  const signature = points
+    .map(point => `${point.id}:${point.lat}:${point.lng}`)
+    .join(',')
 
   useEffect(() => {
     if (points.length === 0) return

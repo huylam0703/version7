@@ -1,4 +1,3 @@
-
 package vn.farm.alert.service;
 
 import lombok.RequiredArgsConstructor;
@@ -23,7 +22,6 @@ public class SensorAlertDetectionService {
         if (reading == null
                 || reading.readingId() == null
                 || reading.nodeId() == null
-                || reading.typeId() == null
                 || reading.value() == null
                 || !Double.isFinite(reading.value())
                 || reading.measuredAt() == null) {
@@ -33,12 +31,12 @@ public class SensorAlertDetectionService {
         }
 
         // 2. Ánh xạ typeId sang mã loại cảm biến
-        String typeId = reading.typeId().toString();
+        String typeId = reading.typeId() == null ? null : reading.typeId().toString();
 
         Map<String, String> typeMappings =
                 properties.getTypeMappings();
 
-        String sensorCode = typeMappings.get(typeId);
+        String sensorCode = typeId == null ? reading.sensorCode() : typeMappings.get(typeId);
 
         if (sensorCode == null || sensorCode.isBlank()) {
             log.warn(

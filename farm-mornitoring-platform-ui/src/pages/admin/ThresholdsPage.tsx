@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { alertApi, farmApi, getErrorMessage } from '../../api'
+import { farmApi } from '../../api/farm-device/farmApi'
+import { alertApi, getErrorMessage } from '../../api'
 import type { AlertThreshold, Farm, SensorType } from '../../types'
 import { SENSOR_TYPE_LABEL } from '../../types'
 import { Button, Card, Empty, ErrorBox, Input, Modal, PageHeader, Select, Table, alertBadge } from '../../components/Ui'

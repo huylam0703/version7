@@ -14,14 +14,15 @@ public class AlertValidator {
 
     public void validateCreate(
             UUID nodeId,
+            UUID missionId,
             String alertType,
             AlertSeverity severity,
             String message
     ) {
-        if (nodeId == null) {
+        if (nodeId == null && missionId == null) {
             throw BusinessException.invalid(
                     "INVALID_NODE_ID",
-                    "nodeId không được null"
+                    "Cần có nodeId hoặc missionId"
             );
         }
 

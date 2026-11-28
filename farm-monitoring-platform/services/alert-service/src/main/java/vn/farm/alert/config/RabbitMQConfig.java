@@ -25,6 +25,21 @@ public class RabbitMQConfig {
     public static final String READINGS_SYNCED_ROUTING_KEY =
             "readings.synced";
 
+    public static final String MISSION_STATUS_QUEUE = "alert.mission.status_changed";
+    private static final String MISSION_STATUS_ROUTING_KEY = "mission.status_changed";
+
+    @Bean
+    public Queue missionStatusQueue() {
+        return QueueBuilder.durable(MISSION_STATUS_QUEUE).build();
+    }
+
+    @Bean
+    public Binding missionStatusBinding(Queue missionStatusQueue) {
+        return BindingBuilder.bind(missionStatusQueue)
+                .to(new TopicExchange(EXCHANGE))
+                .with(MISSION_STATUS_ROUTING_KEY);
+    }
+
     // JSON Message Converter
     @Bean
     public Jackson2JsonMessageConverter jsonMessageConverter() {
@@ -41,6 +56,7 @@ public class RabbitMQConfig {
                 new RabbitTemplate(connectionFactory);
 
         rabbitTemplate.setMessageConverter(jsonMessageConverter);
+        rabbitTemplate.setMandatory(true);
 
         return rabbitTemplate;
     }

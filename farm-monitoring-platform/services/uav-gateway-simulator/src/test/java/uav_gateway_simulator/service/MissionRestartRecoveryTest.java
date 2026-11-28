@@ -9,6 +9,7 @@ import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
 import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 import uav_gateway_simulator.dto.response.RecoverableMissionResponse;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
 
 import java.time.Instant;
 import java.util.List;
@@ -48,7 +49,8 @@ class MissionRestartRecoveryTest {
         payloadStore = mock(MissionResultPayloadStore.class);
         retryScheduler = mock(MissionResultsRetryScheduler.class);
         executor = mock(ExecutorService.class);
-
+        FlightLifecycleService flightLifecycleService =
+                mock(FlightLifecycleService.class);
         // Simulate a previous Simulator instance.
         SimulatorInstanceIdentity oldInstance =
                 new SimulatorInstanceIdentity();
@@ -100,7 +102,8 @@ class MissionRestartRecoveryTest {
                         missionClient,
                         leaseManager,
                         newInstance,
-                        registry
+                        registry,
+                        flightLifecycleService
                 );
 
         coordinator = new MissionRecoveryCoordinator(
@@ -167,7 +170,13 @@ class MissionRestartRecoveryTest {
 
         assertTrue(registry.activeExecutionIds().isEmpty());
 
-        verify(payloadStore).remove(executionId);
+        verify(payloadStore).get(executionId);
+
+        verify(payloadStore, never())
+                .remove(executionId);
+
+        verify(payloadStore, never())
+                .remove(any(MissionResultPayloadStore.PendingResult.class));
     }
 
     @Test

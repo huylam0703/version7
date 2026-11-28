@@ -7,6 +7,7 @@ import org.springframework.web.client.RestClientResponseException;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
 import uav_gateway_simulator.exception.RecoveryOwnershipLostException;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.time.Instant;
 import java.util.Set;
@@ -49,6 +50,12 @@ public class MissionRecoveryLeaseManager {
         if (lease == null) {
             return;
         }
+        FlightOwnershipToken ownershipToken =
+                new FlightOwnershipToken(
+                        executionId,
+                        lease.instanceId(),
+                        lease.recoveryGeneration()
+                );
 
         MissionRecoveryClaimResponse renewed;
 
@@ -66,7 +73,7 @@ public class MissionRecoveryLeaseManager {
 
             if (status == 403 || status == 409) {
 
-                leaseRegistry.markLost(executionId);
+                leaseRegistry.markLostIfCurrent(ownershipToken);
 
                 throw new RecoveryOwnershipLostException(
                         "Recovery ownership rejected during renewal: "
@@ -89,7 +96,7 @@ public class MissionRecoveryLeaseManager {
                 || !Instant.now().plusSeconds(5)
                 .isBefore(renewed.leaseUntil())) {
 
-            leaseRegistry.markLost(executionId);
+            leaseRegistry.markLostIfCurrent(ownershipToken);
 
             throw new RecoveryOwnershipLostException(
                     "Invalid recovery lease renewal response: "
@@ -144,5 +151,21 @@ public class MissionRecoveryLeaseManager {
 
     public void markLost(UUID executionId) {
         leaseRegistry.markLost(executionId);
+    }
+
+    public boolean removeIfCurrent(
+            FlightOwnershipToken ownershipToken
+    ) {
+        return leaseRegistry.removeAfterCompletionIfCurrent(
+                ownershipToken
+        );
+    }
+
+    public boolean markLostIfCurrent(
+            FlightOwnershipToken ownershipToken
+    ) {
+        return leaseRegistry.markLostIfCurrent(
+                ownershipToken
+        );
     }
 }

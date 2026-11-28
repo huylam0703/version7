@@ -9,6 +9,9 @@ import uav_gateway_simulator.dto.response.MissionProgressDetailResponse;
 import uav_gateway_simulator.dto.response.MissionResultResponse;
 import uav_gateway_simulator.dto.request.MissionNodeResultRequest;
 import uav_gateway_simulator.dto.request.MissionResultRequest;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
+import uav_gateway_simulator.telemetry.FlightOwnershipService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.time.Instant;
 import java.util.List;
@@ -26,11 +29,33 @@ public class MissionResultSimulationService {
     private final MissionResultPayloadStore payloadStore;
     private final RecoveryLeaseRegistry leaseRegistry;
     private final MissionCancellationService cancellationService;
+    private final FlightLifecycleService flightLifecycleService;
+    private final FlightOwnershipService flightOwnershipService;
 
     public MissionResultResponse simulateResults(
             UUID missionId,
             UUID executionId,
             List<UUID> nodeIds
+    ) {
+        if (executionId == null) {
+            throw new IllegalArgumentException(
+                    "ExecutionId is required"
+            );
+        }
+
+        return simulateResults(
+                missionId,
+                executionId,
+                nodeIds,
+                flightOwnershipService.capture(executionId)
+        );
+    }
+
+    public MissionResultResponse simulateResults(
+            UUID missionId,
+            UUID executionId,
+            List<UUID> nodeIds,
+            FlightOwnershipToken ownershipToken
     ) {
         if (missionId == null || executionId == null) {
             throw new IllegalArgumentException(
@@ -38,7 +63,7 @@ public class MissionResultSimulationService {
             );
         }
         // Không cho phép gửi Results nếu Recovery đã mất quyền.
-        leaseRegistry.getForWrite(executionId);
+        validateOwnership(executionId, ownershipToken);
 
         if (nodeIds == null || nodeIds.isEmpty()) {
             throw new IllegalArgumentException(
@@ -58,6 +83,7 @@ public class MissionResultSimulationService {
         // Sử dụng đúng tên method hiện có trong MissionClient.
         MissionProgressDetailResponse progress =
                 missionClient.getMissionProgress(missionId);
+        flightOwnershipService.validate(ownershipToken);
 
         if (progress == null
                 || !missionId.equals(progress.missionId())
@@ -148,13 +174,23 @@ public class MissionResultSimulationService {
 
 
         MissionResultPayloadStore.PendingResult pending =
-                payloadStore.saveIfAbsent(missionId, request);
+                payloadStore.saveForCurrentOwner(
+                        missionId,
+                        request,
+                        ownershipToken,
+                        leaseRegistry
+                );
 
-        return sendPendingResults(pending);
+        return sendPendingResults(pending, ownershipToken);
     }
 
     public MissionResultResponse retryResults(UUID executionId) {
-        leaseRegistry.getForWrite(executionId);
+        if (executionId == null) {
+            throw new IllegalArgumentException(
+                    "ExecutionId is required"
+            );
+        }
+
         MissionResultPayloadStore.PendingResult pending =
                 payloadStore.get(executionId);
 
@@ -165,21 +201,56 @@ public class MissionResultSimulationService {
             );
         }
 
-        return sendPendingResults(pending);
+        return retryResults(
+                executionId,
+                pending.ownershipToken()
+        );
+    }
+
+    public MissionResultResponse retryResults(
+            UUID executionId,
+            FlightOwnershipToken ownershipToken
+    ) {
+        validateOwnership(executionId, ownershipToken);
+
+        MissionResultPayloadStore.PendingResult pending =
+                payloadStore.get(executionId);
+
+        if (pending == null) {
+            throw new IllegalStateException(
+                    "No pending Mission Results for executionId="
+                            + executionId
+            );
+        }
+
+        if (!pending.ownershipToken().equals(ownershipToken)) {
+            throw new IllegalStateException(
+                    "Pending Results ownership mismatch"
+            );
+        }
+
+        return sendPendingResults(pending, ownershipToken);
     }
 
 
+
     private MissionResultResponse sendPendingResults(
-            MissionResultPayloadStore.PendingResult pending
+            MissionResultPayloadStore.PendingResult pending,
+            FlightOwnershipToken ownershipToken
     ) {
         UUID missionId = pending.missionId();
         UUID executionId = pending.request().executionId();
 
-        // Kiểm tra lease trước mỗi lần gửi Results.
-        // MissionClient sẽ gắn ownership vào HTTP request.
-        leaseRegistry.getForWrite(executionId);
+        validateOwnership(executionId, ownershipToken);
+        if (!pending.ownershipToken().equals(ownershipToken)) {
+            throw new IllegalStateException(
+                    "Pending Results ownership mismatch"
+            );
+        }
 
         cancellationService.checkNotCancelled(missionId);
+
+        flightOwnershipService.validate(ownershipToken);
 
         log.info(
                 "Sending Mission Results: missionId={}, executionId={}",
@@ -187,10 +258,14 @@ public class MissionResultSimulationService {
                 executionId
         );
 
-        MissionResultResponse response = missionClient.sendResults(
-                missionId,
-                pending.request()
-        );
+        MissionResultResponse response =
+                missionClient.sendResults(
+                        missionId,
+                        pending.request()
+                );
+
+        // Reject stale worker after receiving Results.
+        flightOwnershipService.validate(ownershipToken);
 
         if (response == null
                 || !missionId.equals(response.missionId())
@@ -211,10 +286,41 @@ public class MissionResultSimulationService {
                 response.status()
         );
 
-        // Không xóa payload ở đây.
-        // MissionProcessingService sẽ xóa sau khi tracker
-        // xác nhận COMPLETED.
+        flightOwnershipService.validate(ownershipToken);
+
+        // Update telemetry only after confirmed Results.
+        flightLifecycleService.onMissionResult(
+                missionId,
+                executionId,
+                response,
+                ownershipToken
+        );
+
+        log.info(
+                "[FLIGHT LIFECYCLE] Mission result confirmed: missionId={}, executionId={}, status={}",
+                missionId,
+                executionId,
+                response.status()
+        );
+
+        // Payload cleanup remains in MissionProcessingService.
         return response;
     }
 
+    private void validateOwnership(
+            UUID executionId,
+            FlightOwnershipToken ownershipToken
+    ) {
+        if (executionId == null
+                || ownershipToken == null
+                || !executionId.equals(
+                ownershipToken.executionId()
+        )) {
+            throw new IllegalArgumentException(
+                    "Results ownership token mismatch"
+            );
+        }
+
+        flightOwnershipService.validate(ownershipToken);
+    }
 }

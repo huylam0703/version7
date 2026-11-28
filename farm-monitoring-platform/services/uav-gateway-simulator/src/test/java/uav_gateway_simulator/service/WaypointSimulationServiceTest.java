@@ -4,6 +4,7 @@ package uav_gateway_simulator.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
 import org.springframework.test.util.ReflectionTestUtils;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.dto.request.MissionNodeProgressRequest;
@@ -11,6 +12,8 @@ import uav_gateway_simulator.dto.request.MissionProgressRequest;
 import uav_gateway_simulator.dto.response.MissionProgressResponse;
 import uav_gateway_simulator.dto.response.WaypointResponse;
 import uav_gateway_simulator.exception.MissionCancelledException;
+import uav_gateway_simulator.telemetry.FlightMovementService;
+import uav_gateway_simulator.telemetry.FlightOwnershipService;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -31,6 +34,7 @@ class WaypointSimulationServiceTest {
     private UUID executionId;
     private MissionCancellationService cancellationService;
     private WaypointSensorCollectionService sensorCollectionService;
+    private FlightMovementService flightMovementService;
 
     @BeforeEach
     void setUp() {
@@ -44,12 +48,18 @@ class WaypointSimulationServiceTest {
 
         sensorCollectionService =
                 mock(WaypointSensorCollectionService.class);
+        flightMovementService =
+                mock(FlightMovementService.class);
+        FlightOwnershipService flightOwnershipService =
+                new FlightOwnershipService(leaseRegistry);
 
         simulationService = new WaypointSimulationService(
                 missionClient,
                 leaseRegistry,
                 cancellationService,
-                sensorCollectionService
+                sensorCollectionService,
+                flightMovementService,
+                flightOwnershipService
         );
 
         ReflectionTestUtils.setField(

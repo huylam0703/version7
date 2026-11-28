@@ -7,9 +7,14 @@ import org.mockito.InOrder;
 import uav_gateway_simulator.client.MissionClient;
 import uav_gateway_simulator.config.SimulatorInstanceIdentity;
 import uav_gateway_simulator.dto.MissionReadyPayload;
+import uav_gateway_simulator.dto.request.MissionResultRequest;
 import uav_gateway_simulator.dto.response.MissionRecoveryClaimResponse;
+import uav_gateway_simulator.exception.MissionCancelledException;
+import uav_gateway_simulator.telemetry.FlightLifecycleService;
+import uav_gateway_simulator.telemetry.FlightOwnershipToken;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -20,6 +25,7 @@ import static org.mockito.Mockito.*;
 
 class MissionProcessingRecoveryTest {
 
+    private FlightLifecycleService flightLifecycleService;
     private MissionExecutionService missionExecutionService;
     private MissionExecutionTracker executionTracker;
     private MissionResultSimulationService resultService;
@@ -48,6 +54,8 @@ class MissionProcessingRecoveryTest {
         executor = mock(ExecutorService.class);
         retryScheduler = mock(MissionResultsRetryScheduler.class);
         missionClient = mock(MissionClient.class);
+        flightLifecycleService =
+                mock(FlightLifecycleService.class);
 
         leaseRegistry = new RecoveryLeaseRegistry();
 
@@ -86,7 +94,8 @@ class MissionProcessingRecoveryTest {
                 missionClient,
                 recoveryLeaseManager,
                 instanceIdentity,
-                leaseRegistry
+                leaseRegistry,
+                flightLifecycleService
         );
     }
 
@@ -137,7 +146,13 @@ class MissionProcessingRecoveryTest {
 
         assertTrue(leaseRegistry.activeExecutionIds().isEmpty());
 
-        verify(payloadStore).remove(executionId);
+        verify(payloadStore).get(executionId);
+
+        verify(payloadStore, never())
+                .remove(executionId);
+
+        verify(payloadStore, never())
+                .remove(any(MissionResultPayloadStore.PendingResult.class));
     }
 
     @Test
@@ -270,5 +285,227 @@ class MissionProcessingRecoveryTest {
         );
 
         verify(payloadStore, never()).remove(executionId);
+    }
+
+    private MissionRecoveryClaimResponse replaceRecoveryGeneration() {
+
+        MissionRecoveryClaimResponse newClaim =
+                new MissionRecoveryClaimResponse(
+                        missionId,
+                        executionId,
+                        instanceId,
+                        2L,
+                        Instant.now().plusSeconds(120)
+                );
+
+        leaseRegistry.register(newClaim);
+
+        return newClaim;
+    }
+
+    @Test
+    void shouldIgnoreStaleRecoveryCompletion() {
+
+        mockValidClaim();
+
+        doAnswer(invocation -> {
+
+            replaceRecoveryGeneration();
+
+            return null;
+
+        }).when(missionExecutionService)
+                .resumeMission(payload);
+
+        assertTrue(processingService.recover(payload));
+
+        assertEquals(
+                MissionExecutionTracker.Status.PROCESSING,
+                executionTracker.getStatus(executionId)
+        );
+
+        assertEquals(
+                2L,
+                leaseRegistry.getForWrite(executionId)
+                        .recoveryGeneration()
+        );
+
+        verifyNoInteractions(payloadStore);
+    }
+
+    @Test
+    void shouldIgnoreStaleRecoveryCancellation() {
+
+        mockValidClaim();
+
+        doAnswer(invocation -> {
+
+            replaceRecoveryGeneration();
+
+            throw new MissionCancelledException(
+                    "Stale worker cancelled"
+            );
+
+        }).when(missionExecutionService)
+                .resumeMission(payload);
+
+        assertTrue(processingService.recover(payload));
+
+        assertEquals(
+                MissionExecutionTracker.Status.PROCESSING,
+                executionTracker.getStatus(executionId)
+        );
+
+        assertEquals(
+                2L,
+                leaseRegistry.getForWrite(executionId)
+                        .recoveryGeneration()
+        );
+
+        verifyNoInteractions(payloadStore);
+    }
+
+    @Test
+    void shouldIgnoreStaleRecoveryFailure() {
+
+        mockValidClaim();
+
+        doAnswer(invocation -> {
+
+            replaceRecoveryGeneration();
+
+            throw new IllegalStateException(
+                    "Stale worker failed"
+            );
+
+        }).when(missionExecutionService)
+                .resumeMission(payload);
+
+        assertTrue(processingService.recover(payload));
+
+        assertEquals(
+                MissionExecutionTracker.Status.PROCESSING,
+                executionTracker.getStatus(executionId)
+        );
+
+        assertEquals(
+                2L,
+                leaseRegistry.getForWrite(executionId)
+                        .recoveryGeneration()
+        );
+
+        verifyNoInteractions(payloadStore);
+        verifyNoInteractions(retryScheduler);
+    }
+
+    @Test
+    void shouldNotRemovePayloadOwnedByAnotherGeneration() {
+
+        mockValidClaim();
+
+        FlightOwnershipToken newToken =
+                new FlightOwnershipToken(
+                        executionId,
+                        instanceId,
+                        2L
+                );
+
+        MissionResultRequest request =
+                new MissionResultRequest(
+                        executionId,
+                        List.of(),
+                        true,
+                        instanceId,
+                        2L
+                );
+
+        MissionResultPayloadStore.PendingResult pending =
+                new MissionResultPayloadStore.PendingResult(
+                        missionId,
+                        request,
+                        newToken
+                );
+
+        when(payloadStore.get(executionId))
+                .thenReturn(pending);
+
+        assertTrue(processingService.recover(payload));
+
+        verify(payloadStore).get(executionId);
+
+        verify(payloadStore, never())
+                .remove(executionId);
+
+        verify(payloadStore, never())
+                .remove(any(
+                        MissionResultPayloadStore.PendingResult.class
+                ));
+    }
+
+    @Test
+    void shouldRemovePayloadOwnedByCurrentGeneration() {
+
+        mockValidClaim();
+
+        FlightOwnershipToken ownershipToken =
+                new FlightOwnershipToken(
+                        executionId,
+                        instanceId,
+                        1L
+                );
+
+        MissionResultRequest request =
+                new MissionResultRequest(
+                        executionId,
+                        List.of(),
+                        true,
+                        instanceId,
+                        1L
+                );
+
+        MissionResultPayloadStore.PendingResult pending =
+                new MissionResultPayloadStore.PendingResult(
+                        missionId,
+                        request,
+                        ownershipToken
+                );
+
+        when(payloadStore.get(executionId))
+                .thenReturn(pending);
+
+        when(payloadStore.remove(pending))
+                .thenReturn(true);
+
+        assertTrue(processingService.recover(payload));
+
+        assertEquals(
+                MissionExecutionTracker.Status.COMPLETED,
+                executionTracker.getStatus(executionId)
+        );
+
+        verify(payloadStore).remove(pending);
+
+        verify(payloadStore, never())
+                .remove(executionId);
+
+        assertTrue(
+                leaseRegistry.activeExecutionIds().isEmpty()
+        );
+    }
+    @Test
+    void shouldCleanupRecoveryWhenCancellationTelemetryFails() {
+        mockValidClaim();
+        FlightOwnershipToken token = new FlightOwnershipToken(executionId, instanceId, 1L);
+        MissionResultRequest request = new MissionResultRequest(executionId, List.of(), true, instanceId, 1L);
+        var pending = new MissionResultPayloadStore.PendingResult(missionId, request, token);
+        when(payloadStore.get(executionId)).thenReturn(pending);
+        doThrow(new MissionCancelledException("Cancelled")).when(missionExecutionService).resumeMission(payload);
+        doThrow(new IllegalStateException("Lease expired")).when(flightLifecycleService).onCancelled(missionId, executionId, token);
+        assertTrue(processingService.recover(payload));
+        assertEquals(MissionExecutionTracker.Status.CANCELLED, executionTracker.getStatus(executionId));
+        verify(payloadStore).remove(pending);
+        verify(flightLifecycleService).onCancelled(missionId, executionId, token);
+        assertTrue(leaseRegistry.activeExecutionIds().isEmpty());
+        verifyNoInteractions(retryScheduler);
     }
 }
