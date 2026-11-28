@@ -5,6 +5,7 @@ export type FarmDto = {
   centerLat?: number
   centerLng?: number
   areaHa?: number
+  boundaryGeojson?: string | null
   description?: string
   status: string
 }

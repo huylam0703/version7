@@ -4,100 +4,122 @@ import { zoneApi } from '../../api/farm-device/zoneApi'
 import { getErrorMessage } from '../../api/errorHandler'
 import type { Farm, Zone } from '../../types'
 import { Button, Card, Empty, ErrorBox, Input, Modal, PageHeader, Select, Table } from '../../components/Ui'
-import { MapView } from '../../components/MapView'
+import { FarmZoneMap } from '../../components/FarmZoneMap'
+import { areaInHectares, boundaryCenter, defaultFarmMapCenter, isCoordinate, isValidBoundary, namedBoundary, readBoundary, zoneBoundaryError, type Coordinates } from '../../utils/farmZoneGeometry'
+
+type FarmZones = { id: string; farm: Farm | null; zones: Zone[] }
+
+function zoneArea(zone: Zone) {
+  const polygon = readBoundary(zone)
+  return isValidBoundary(polygon) ? areaInHectares(polygon).toFixed(2) : '—'
+}
 
 export function ZonesPage() {
-  const [zones, setZones] = useState<Zone[]>([])
   const [farms, setFarms] = useState<Farm[]>([])
   const [farmId, setFarmId] = useState('')
-
+  const [results, setResults] = useState<FarmZones | null>(null)
+  const [revision, setRevision] = useState(0)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [completedQuery, setCompletedQuery] = useState('')
   const [saving, setSaving] = useState(false)
+  const [editLoading, setEditLoading] = useState(false)
   const [formError, setFormError] = useState('')
 
   const [open, setOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState<Partial<Zone>>({ name: '', cropType: '', farmId: '', latitude: 10.76, longitude: 106.66 })
+  const [form, setForm] = useState<Partial<Zone>>({})
+  const [boundary, setBoundary] = useState<string | null>(null)
+  const [drawing, setDrawing] = useState(false)
+  const [context, setContext] = useState<FarmZones | null>(null)
+  const [contextError, setContextError] = useState('')
 
-  async function load() {
-    try {
-      setLoading(true)
-      setError('')
+  const query = JSON.stringify([farmId, revision])
+  const loading = completedQuery !== query
 
-      const [zoneData, farmData] = await Promise.all([
-        zoneApi.list(farmId || undefined),
-        farmApi.list(),
-      ])
+  useEffect(() => {
+    let current = true
+    Promise.all([farmApi.list(), zoneApi.list(farmId || undefined), farmId ? farmApi.get(farmId) : null])
+      .then(([farmList, zones, farm]) => {
+        if (!current) return
+        setError('')
+        setFarms(farmList)
+        setResults({ id: farmId, farm, zones })
+      })
+      .catch(e => {
+        if (!current) return
+        setResults(null)
+        setError(getErrorMessage(e))
+      })
+      .finally(() => { if (current) setCompletedQuery(query) })
+    return () => { current = false }
+  }, [farmId, query])
 
-      setZones(zoneData)
-      setFarms(farmData)
-    } catch (e) {
-      setZones([])
-      setError(getErrorMessage(e))
-    } finally {
-      setLoading(false)
-    }
-  }
+  const chosenFarmId = open ? form.farmId : undefined
+  useEffect(() => {
+    if (!chosenFarmId) return
+    let current = true
+    Promise.all([farmApi.get(chosenFarmId), zoneApi.list(chosenFarmId)])
+      .then(([farm, zones]) => {
+        if (current) setContext({ id: chosenFarmId, farm, zones })
+      })
+      .catch(e => { if (current) setContextError(getErrorMessage(e)) })
+    return () => { current = false }
+  }, [chosenFarmId])
 
-  useEffect(() => { load() }, [farmId])
-
-  function openCreate() {
-    setEditingId(null)
+  function openForm(zone?: Zone) {
+    setEditingId(zone?.id ?? null)
     setFormError('')
-
-    setForm({
-      name: '',
-      cropType: '',
-      farmId: farmId,
-      latitude: 10.76,
-      longitude: 106.66,
-    })
-
+    setContext(null)
+    setContextError('')
+    setDrawing(false)
+    setForm(zone ?? { name: '', cropType: '', farmId })
+    const saved = readBoundary(zone)
+    setBoundary(saved ? JSON.stringify(saved) : null)
     setOpen(true)
   }
 
   async function openEdit(id: string) {
+    setError('')
+    setEditLoading(true)
     try {
-      setError('')
-      const zone = await zoneApi.get(id)
-
-      setEditingId(zone.id)
-      setForm(zone)
-      setOpen(true)
+      openForm(await zoneApi.get(id))
     } catch (e) {
       setError(getErrorMessage(e))
+    } finally {
+      setEditLoading(false)
     }
   }
 
+  const savedContext = context?.id === chosenFarmId ? context : null
+  const farmOutline = savedContext?.farm ? namedBoundary(savedContext.farm) : undefined
+  const hasFarmBoundary = farmOutline != null && isValidBoundary(farmOutline.polygon)
+  const siblingZones = savedContext?.zones.filter(zone => zone.id !== editingId)
+    .flatMap(zone => {
+      const item = namedBoundary(zone)
+      return item && isValidBoundary(item.polygon) ? [item] : []
+    }) ?? []
+  const draft = readBoundary({ boundaryGeojson: boundary })
+  const validDraft = isValidBoundary(draft)
+  const geometryError = boundary && !validDraft ? 'Draw a valid polygon without crossing edges.' :
+    draft && hasFarmBoundary ? zoneBoundaryError(draft, farmOutline.polygon, siblingZones) : ''
+  const center = validDraft ? boundaryCenter(draft) : undefined
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-
-    if (saving) return
-
-    setFormError('')
-
-    if (!form.farmId) {
-      setFormError('Please select a farm.')
-      return
-    }
-
+    if (saving || drawing || !savedContext || !hasFarmBoundary || !validDraft || !center || geometryError) return
     if (!form.name?.trim()) {
       setFormError('Zone name is required.')
       return
     }
 
+    setFormError('')
+    setSaving(true)
     try {
-      setSaving(true)
-
-      if (editingId) {
-        await zoneApi.update(editingId, form)
-      } else {
-        await zoneApi.create(form)
-      }
-
+      const payload = { ...form, name: form.name.trim(), boundaryGeojson: boundary, latitude: center[0], longitude: center[1] }
+      if (editingId) await zoneApi.update(editingId, payload)
+      else await zoneApi.create(payload)
       setOpen(false)
-      await load()
+      setRevision(value => value + 1)
     } catch (e) {
       setFormError(getErrorMessage(e))
     } finally {
@@ -107,17 +129,11 @@ export function ZonesPage() {
 
   async function changeStatus(zone: Zone) {
     if (saving) return
-
+    setSaving(true)
+    setError('')
     try {
-      setSaving(true)
-      setError('')
-
-      await zoneApi.setActive(
-        zone.id,
-        zone.isActive === false
-      )
-
-      await load()
+      await zoneApi.setActive(zone.id, zone.isActive === false)
+      setRevision(value => value + 1)
     } catch (e) {
       setError(getErrorMessage(e))
     } finally {
@@ -125,97 +141,126 @@ export function ZonesPage() {
     }
   }
 
-  const points = zones.filter((z) => z.latitude && z.longitude).map((z) => ({
-    id: z.id,
-    lat: z.latitude as number,
-    lng: z.longitude as number,
-    popup: `${z.name} (${z.cropType || 'crop'})`,
-  }))
+  const activeResults = results?.id === farmId ? results : null
+  const zones = activeResults?.zones ?? []
+  const listFarm = activeResults?.farm
+  const listOutline = listFarm ? namedBoundary(listFarm) : undefined
+  const zoneOutlines = zones.flatMap(zone => {
+    const item = namedBoundary(zone)
+    return item ? [item] : []
+  })
+  const points = [listFarm, ...zones].flatMap(item =>
+    item && item.latitude != null && item.longitude != null && isCoordinate(item.latitude, item.longitude)
+      ? [{ id: item.id, lat: item.latitude, lng: item.longitude, popup: item.name }]
+      : [],
+  )
+
+  const mapCenter: Coordinates = points.length ? [points[0].lat, points[0].lng] :
+    listOutline?.polygon ? (isValidBoundary(listOutline.polygon) ? boundaryCenter(listOutline.polygon) : defaultFarmMapCenter) :
+      defaultFarmMapCenter
 
   return (
     <div>
       <PageHeader
         title="Zone management"
-        description="Assign crop zones to farms and show them on the map."
-        actions={
-          <Button onClick={openCreate}>
-            Create zone
-          </Button>
-        }
+        description="Draw and manage crop zones within farm boundaries."
+        actions={<Button onClick={() => openForm()} disabled={editLoading || saving}>Create zone</Button>}
       />
       <ErrorBox message={error} />
       <div className="mb-4 max-w-xs">
-        <Select value={farmId} onChange={(e) => setFarmId(e.target.value)}>
+        <Select label="Farm" value={farmId} onChange={e => setFarmId(e.target.value)}>
           <option value="">All farms</option>
-          {farms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          {farms.map(farm => <option key={farm.id} value={farm.id}>{farm.name}</option>)}
         </Select>
       </div>
-      <MapView points={points} polygons={zones.filter((z) => z.boundary).map((z) => z.boundary!)} />
+      {listFarm && !isValidBoundary(listOutline?.polygon) && (
+        <p className="mb-3 text-sm text-amber-800">Add a boundary in Farm management before drawing zones for this farm.</p>
+      )}
+      {activeResults && (listOutline || points.length > 0 || zoneOutlines.length > 0) && (
+        <FarmZoneMap
+          key={farmId}
+          center={mapCenter}
+          fitBoundary={listOutline?.polygon}
+          fitPoints
+          farm={listOutline}
+          zones={zoneOutlines}
+          points={points}
+        />
+      )}
       <Card className="mt-4">
         {loading ? (
-          <p className="py-4 text-center">
-            Loading zones...
-          </p>
-        ) : error && zones.length === 0 ? (
+          <p className="py-4 text-center">Loading zones...</p>
+        ) : error && !activeResults ? (
           <div className="py-4 text-center">
-            <Button variant="outline" onClick={() => load()}>
-              Retry
-            </Button>
+            <Button variant="outline" onClick={() => setRevision(value => value + 1)}>Retry</Button>
           </div>
         ) : zones.length === 0 ? (
           <Empty text="No zones found." />
         ) : (
-          <Table headers={['Zone', 'Farm', 'Crop', 'Sensors', 'Status', 'Actions']}>
-            {zones.map((z) => (
-              <tr key={z.id}>
-                <td className="px-3 py-2">{z.name}</td>
-                <td className="px-3 py-2">{z.farmName || z.farmId}</td>
-                <td className="px-3 py-2">{z.cropType || '—'}</td>
-                <td className="px-3 py-2">{z.sensorCount ?? '—'}</td>
-                <td className="px-3 py-2">{z.isActive === false ? 'Inactive' : 'Active'}</td>
-                <td className="px-3 py-2 space-x-2">
-                  <button
-                    className="text-brand"
-                    onClick={() => openEdit(z.id)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    disabled={saving}
-                    onClick={() => changeStatus(z)}
-                  >
-                    {z.isActive === false ? 'Activate' : 'Deactivate'}
-                  </button>
+          <Table headers={['Zone', 'Farm', 'Crop', 'Area (ha)', 'Sensors', 'Status', 'Actions']}>
+            {zones.map(zone => (
+              <tr key={zone.id}>
+                <td className="px-3 py-2">{zone.name}</td>
+                <td className="px-3 py-2">{zone.farmName || zone.farmId}</td>
+                <td className="px-3 py-2">{zone.cropType || '—'}</td>
+                <td className="px-3 py-2">{zoneArea(zone)}</td>
+                <td className="px-3 py-2">{zone.sensorCount ?? '—'}</td>
+                <td className="px-3 py-2">{zone.isActive === false ? 'Inactive' : 'Active'}</td>
+                <td className="space-x-2 px-3 py-2">
+                  <button className="text-brand disabled:opacity-50" disabled={editLoading || saving} onClick={() => openEdit(zone.id)}>Edit</button>
+                  <button disabled={saving} onClick={() => changeStatus(zone)}>{zone.isActive === false ? 'Activate' : 'Deactivate'}</button>
                 </td>
               </tr>
             ))}
           </Table>
         )}
       </Card>
-      <Modal open={open} title={editingId ? 'Edit zone' : 'Create zone'} onClose={() => setOpen(false)}>
-        <form className="space-y-3" onSubmit={onSubmit}>
-          <ErrorBox message={formError} />
-          <Select label="Farm" value={form.farmId || ''} onChange={(e) => setForm({ ...form, farmId: e.target.value })}>
-            <option value="">Select farm</option>
-            {farms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-          </Select>
-          <Input label="Name" value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          <Input label="Crop type" value={form.cropType || ''} onChange={(e) => setForm({ ...form, cropType: e.target.value })} />
-          <div className="grid grid-cols-2 gap-2">
-            <Input label="Latitude" type="number" step="any" value={form.latitude ?? 0} onChange={(e) => setForm({ ...form, latitude: Number(e.target.value) })} />
-            <Input label="Longitude" type="number" step="any" value={form.longitude ?? 0} onChange={(e) => setForm({ ...form, longitude: Number(e.target.value) })} />
+      <Modal open={open} title={editingId ? 'Edit zone' : 'Create zone'} wide onClose={() => { if (!saving) setOpen(false) }}>
+        <form className="space-y-4" onSubmit={onSubmit}>
+          <ErrorBox message={formError || contextError || geometryError} />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Select label="Farm" aria-label="Farm" disabled={!!editingId || saving} value={form.farmId || ''} onChange={e => {
+              setContext(null)
+              setContextError('')
+              setFormError('')
+              setBoundary(null)
+              setDrawing(false)
+              setForm({ ...form, farmId: e.target.value })
+            }}>
+              <option value="">Select farm</option>
+              {farms.map(farm => <option key={farm.id} value={farm.id}>{farm.name}</option>)}
+            </Select>
+            <Input label="Zone name" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={100} required />
+            <Input label="Crop type" value={form.cropType || ''} onChange={e => setForm({ ...form, cropType: e.target.value })} maxLength={100} />
           </div>
+          {!chosenFarmId ? (
+            <p className="text-sm text-muted">Select a farm to load its boundary and existing zones.</p>
+          ) : !savedContext && !contextError ? (
+            <p role="status" className="text-sm text-muted">Loading farm boundary and zones...</p>
+          ) : savedContext && !hasFarmBoundary ? (
+            <p className="text-sm text-amber-800">Add a valid boundary to this farm in Farm management before saving a zone.</p>
+          ) : null}
+          {hasFarmBoundary && (
+            <>
+              <FarmZoneMap
+                key={chosenFarmId}
+                center={boundaryCenter(farmOutline.polygon)}
+                fitBoundary={farmOutline.polygon}
+                farm={farmOutline}
+                zones={siblingZones}
+                points={center ? [{ id: 'center', lat: center[0], lng: center[1] }] : []}
+                editor={{ value: boundary, onChange: setBoundary, onBusyChange: setDrawing }}
+                height={340}
+              />
+              <dl className="flex flex-wrap gap-x-8 gap-y-2 rounded-xl bg-stone-50 px-4 py-3 text-sm">
+                <div><dt className="text-muted">Area (ha)</dt><dd>{validDraft ? areaInHectares(draft).toFixed(2) : '—'}</dd></div>
+                <div><dt className="text-muted">Center coordinates</dt><dd>{center ? center.map(value => value.toFixed(6)).join(', ') : '—'}</dd></div>
+              </dl>
+            </>
+          )}
           <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={saving}
-              onClick={() => setOpen(false)}
-            >
-              Cancel
-            </Button>
-
-            <Button type="submit" disabled={saving}>
+            <Button variant="outline" disabled={saving} onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={saving || drawing || !hasFarmBoundary || !validDraft || !!geometryError}>
               {saving ? 'Saving...' : 'Save'}
             </Button>
           </div>

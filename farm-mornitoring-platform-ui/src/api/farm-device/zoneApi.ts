@@ -28,6 +28,7 @@ const toZone = (z: ZoneDto, farmName?: string): Zone => ({
   cropType: z.cropType,
   latitude: z.centerLat,
   longitude: z.centerLng,
+  boundaryGeojson: z.boundaryGeojson,
   isActive: z.status === 'ACTIVE',
 })
 
@@ -59,6 +60,7 @@ export const zoneApi = {
       cropType: body.cropType,
       centerLat: body.latitude,
       centerLng: body.longitude,
+      boundaryGeojson: body.boundaryGeojson,
     })
     return toZone(res.data)
   },
@@ -70,6 +72,7 @@ export const zoneApi = {
           cropType: body.cropType,
           centerLat: body.latitude,
           centerLng: body.longitude,
+          boundaryGeojson: body.boundaryGeojson,
         })
       ).data,
     ),

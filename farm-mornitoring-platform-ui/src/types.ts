@@ -31,6 +31,7 @@ export type Farm = {
   longitude?: number
   isActive?: boolean
   description?: string
+  boundaryGeojson?: string | null
   boundary?: [number, number][]
 }
 
@@ -44,6 +45,7 @@ export type Zone = {
   longitude?: number
   isActive?: boolean
   sensorCount?: number
+  boundaryGeojson?: string | null
   boundary?: [number, number][]
 }
 
