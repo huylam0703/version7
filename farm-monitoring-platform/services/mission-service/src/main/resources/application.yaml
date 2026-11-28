@@ -57,6 +57,11 @@ springdoc:
     tags-sorter: alpha
 
 integration:
+  auth:
+    token-url: ${AUTH_TOKEN_URL:http://localhost:8081/oauth2/token}
+    client-id: ${MISSION_CLIENT_ID:mission-service}
+    client-secret: ${MISSION_CLIENT_SECRET:}
+
   farm-device:
     base-url: ${FARM_DEVICE_BASE_URL:http://localhost:8082}
 

@@ -13,11 +13,14 @@ import java.time.Duration;
 public class FarmDeviceClient {
 
     private final RestClient restClient;
+    private final ServiceTokenProvider tokenProvider;
 
     public FarmDeviceClient(
             @Value("${integration.farm-device.base-url}")
-            String baseUrl
+            String baseUrl,
+            ServiceTokenProvider tokenProvider
     ) {
+        this.tokenProvider = tokenProvider;
         SimpleClientHttpRequestFactory factory =
                 new SimpleClientHttpRequestFactory();
 
@@ -35,6 +38,7 @@ public class FarmDeviceClient {
     ) {
         return restClient.post()
                 .uri("/internal/v1/references/mission-check")
+                .headers(headers -> headers.setBearerAuth(tokenProvider.getAccessToken()))
                 .body(request)
                 .retrieve()
                 .body(MissionCheckResponse.class);

@@ -181,6 +181,9 @@ services:
      environment:
        SERVER_PORT: 8080
        MISSION_REFERENCE_VALIDATION_MODE: remote
+       AUTH_TOKEN_URL: http://user-auth-service:8080/oauth2/token
+       MISSION_CLIENT_ID: mission-service
+       MISSION_CLIENT_SECRET: ${MISSION_CLIENT_SECRET:-dev-secret-mission}
        FARM_DEVICE_BASE_URL: http://farm-device-service:8080
        AUTH_JWKS_URI: http://user-auth-service:8080/.well-known/jwks.json
        SPRING_DATASOURCE_URL: jdbc:sqlserver://sqlserver:1433;databaseName=mission_db;encrypt=true;trustServerCertificate=true
