@@ -18,7 +18,11 @@ import vn.farm.farmdevice.dto.SensorDtos.RotateCredentialRequest;
 import vn.farm.farmdevice.dto.SensorDtos.RotateCredentialResponse;
 import vn.farm.farmdevice.dto.SensorDtos.UpdateNodeRequest;
 import vn.farm.farmdevice.entity.NodeStatus;
+import vn.farm.farmdevice.service.NodeRegistrationService;
 import vn.farm.farmdevice.service.SensorNodeService;
+import vn.farm.farmdevice.dto.SensorDtos.RegisterNodeRequest;
+import vn.farm.farmdevice.dto.SensorDtos.RegisterNodeResponse;
+import vn.farm.farmdevice.service.NodeRegistrationService;
 
 /** Route theo PLATFORM-CONVENTIONS §8: /api/v1/nodes. */
 @RestController
@@ -27,6 +31,7 @@ import vn.farm.farmdevice.service.SensorNodeService;
 public class SensorNodeController {
     private final SensorNodeService service;
     private final Access access;
+    private final NodeRegistrationService nodeRegistrationService;
 
     @GetMapping
     @PreAuthorize("@access.read()")
@@ -74,4 +79,17 @@ public class SensorNodeController {
     public RotateCredentialResponse rotate(@PathVariable UUID nodeId, @Valid @RequestBody RotateCredentialRequest body) {
         return service.rotateCredential(nodeId, body.newAuthKey());
     }
+
+
+    /**
+     * ESP32 tự động đăng ký địa chỉ IP
+     * sau khi kết nối hoặc kết nối lại Wi-Fi.
+     */
+    @PostMapping("/register")
+    public RegisterNodeResponse register(
+            @Valid @RequestBody RegisterNodeRequest body) {
+
+        return nodeRegistrationService.register(body);
+    }
+
 }

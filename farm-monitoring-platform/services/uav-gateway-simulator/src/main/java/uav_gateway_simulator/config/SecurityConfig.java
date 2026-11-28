@@ -47,6 +47,12 @@ public class SecurityConfig {
                         )
                         .hasAnyRole("ADMIN", "OPERATOR")
 
+
+                        .pathMatchers(
+                                HttpMethod.GET,
+                                "/test/esp32/*"
+                        )
+                        .hasRole("ADMIN")
                         .anyExchange()
                         .denyAll()
                 )

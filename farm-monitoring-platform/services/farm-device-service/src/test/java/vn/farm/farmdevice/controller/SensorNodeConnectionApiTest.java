@@ -24,13 +24,22 @@ import vn.farm.farmdevice.config.WebErrorHandler;
 import vn.farm.farmdevice.dto.SensorDtos.NodeConnectionResponse;
 import vn.farm.farmdevice.entity.ConnectionType;
 import vn.farm.farmdevice.entity.NodeStatus;
+import vn.farm.farmdevice.service.NodeRegistrationService;
 import vn.farm.farmdevice.service.SensorNodeService;
 
 /** Test API (MockMvc standalone, dùng WebErrorHandler thật) + test phân quyền của Access.internal(). */
 class SensorNodeConnectionApiTest {
     private final SensorNodeService service = mock(SensorNodeService.class);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new SensorNodeController(service, mock(Access.class)))
-            .setControllerAdvice(new WebErrorHandler()).build();
+
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                    new SensorNodeController(
+                            service,
+                            mock(Access.class),
+                            mock(NodeRegistrationService.class)
+                    ))
+            .setControllerAdvice(new WebErrorHandler())
+            .build();
+
     private final UUID id = UUID.randomUUID();
 
     @BeforeEach @AfterEach

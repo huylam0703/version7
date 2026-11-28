@@ -70,4 +70,30 @@ public final class SensorDtos {
     /** Response của GET /api/v1/nodes/{nodeId}/connection (Simulator dùng). */
     public record NodeConnectionResponse(UUID nodeId, String deviceUid, ConnectionType connectionType,
                                          String endpointUrl, NodeStatus status, Instant lastSeenAt) {}
+
+    public record RegisterNodeRequest(
+            @NotBlank @Size(max = 50)
+            String deviceUid,
+
+            @NotBlank @Size(min = 16, max = 72)
+            String authKey,
+
+            @NotBlank @Size(max = 15)
+            String ipAddress
+    ) {
+        @Override
+        public String toString() {
+            return "RegisterNodeRequest[deviceUid=" + deviceUid
+                    + ", authKey=REDACTED"
+                    + ", ipAddress=" + ipAddress + "]";
+        }
+    }
+
+    public record RegisterNodeResponse(
+            UUID nodeId,
+            String deviceUid,
+            String endpointUrl,
+            Instant lastSeenAt,
+            boolean registered
+    ) {}
 }
