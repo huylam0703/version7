@@ -19,6 +19,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import vn.farm.farmdevice.common.Access;
 import vn.farm.farmdevice.dto.SensorDtos.UpdateNodeRequest;
+import vn.farm.farmdevice.service.NodeRegistrationService;
 import vn.farm.farmdevice.service.SensorNodeService;
 
 /**
@@ -32,7 +33,19 @@ class SensorNodeSecurityTest {
     static class Cfg {
         @Bean SensorNodeService service() { return mock(SensorNodeService.class); }
         @Bean("access") Access access() { return new Access(); }
-        @Bean SensorNodeController controller(SensorNodeService s, Access a) { return new SensorNodeController(s, a); }
+        @Bean
+        NodeRegistrationService nodeRegistrationService() {
+            return mock(NodeRegistrationService.class);
+        }
+
+        @Bean
+        SensorNodeController controller(
+                SensorNodeService s,
+                Access a,
+                NodeRegistrationService registrationService) {
+
+            return new SensorNodeController(s, a, registrationService);
+        }
     }
 
     private AnnotationConfigApplicationContext ctx;
