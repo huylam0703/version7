@@ -1,8 +1,8 @@
 package vn.farm.sensordata.application;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import vn.farm.sensordata.api.dto.ReadingFilter;
 import vn.farm.sensordata.api.dto.ReadingFilter.Status;
@@ -17,21 +17,24 @@ import java.util.List;
 import java.util.Map;
 
 @Service
-@Transactional(readOnly = true)
 public class ReadingQueryService {
     private static final Instant SQL_MIN = Instant.parse("0001-01-01T00:00:00Z");
     private static final Instant SQL_MAX = Instant.parse("9999-12-31T23:59:59.999Z");
     private static final int MAX_BUCKETS = 1_000;
     private static final int MAX_POINTS = 10_000;
+    private static final TypeReference<Page> LATEST_RESULT = new TypeReference<>() {};
+    private static final TypeReference<List<Statistics>> STATISTICS_RESULT = new TypeReference<>() {};
     private static final Map<String, String> SORT_COLUMNS = Map.of(
             "id", "id", "measuredAt", "measured_at", "collectedAt", "collected_at",
             "receivedAt", "received_at", "sensorValue", "sensor_value",
             "nodeId", "node_id", "sensorType", "sensor_code");
 
     private final ReadingQueryRepository queries;
+    private final ReadingRedisCache cache;
 
-    public ReadingQueryService(ReadingQueryRepository queries) {
+    public ReadingQueryService(ReadingQueryRepository queries, ReadingRedisCache cache) {
         this.queries = queries;
+        this.cache = cache;
     }
 
     public ReadingView getReading(long id) {
@@ -53,7 +56,11 @@ public class ReadingQueryService {
             case "desc" -> false;
             default -> throw badRequest("sortDirection must be asc or desc");
         };
-        return queries.findPage(filter, page, column, ascending, latest);
+        if (latest) {
+            return cache.getOrLoad("latest", List.of(filter, page), LATEST_RESULT,
+                    () -> queries.findPage(filter, page, column, ascending, true));
+        }
+        return queries.findPage(filter, page, column, ascending, false);
     }
 
     public Page nodeHistory(String nodeId, ReadingFilter filter, ReadingPageRequest page) {
@@ -65,7 +72,8 @@ public class ReadingQueryService {
 
     public List<Statistics> statistics(ReadingFilter filter) {
         validateFilter(filter);
-        return queries.statistics(forAggregates(filter));
+        ReadingFilter effective = forAggregates(filter);
+        return cache.getOrLoad("statistics", effective, STATISTICS_RESULT, () -> queries.statistics(effective));
     }
 
     public List<TimePoint> timeSeries(ReadingFilter filter, ReadingInterval interval) {

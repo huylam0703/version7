@@ -111,6 +111,14 @@ Filter dùng chung gồm `nodeId`, `sensorType`, `farmId`, `zoneId`, `missionId`
 
 Lỗi v1 trả `application/problem+json` với HTTP status, `code`, `traceId` và thông tin lỗi theo trường khi có. Swagger UI và `/v3/api-docs` mô tả cả hai phiên bản.
 
+## Cache Redis cho dashboard
+
+`GET /api/v1/readings/latest` và `GET /api/v1/readings/statistics` dùng Redis để lưu kết quả trong 15 giây. Cache phân biệt tất cả bộ lọc và các tham số phân trang, sắp xếp. Sau khi lưu bản đo mới, service đổi thế hệ cache để lần đọc tiếp theo lấy dữ liệu mới từ SQL Server. Request chỉ chứa bản đo trùng giữ lại cache hiện tại.
+
+Docker Compose bật cache cho Sensor Data bằng Redis trong `deploy/docker-compose.infra.yml`. Khi chạy Sensor Data riêng, đặt `SENSOR_CACHE_ENABLED=true` cùng `SPRING_DATA_REDIS_HOST`, `SPRING_DATA_REDIS_PORT` và `SPRING_DATA_REDIS_PASSWORD` theo môi trường. Spring mặc định kết nối `localhost:6379`. Lấy mật khẩu Redis từ cấu hình môi trường cục bộ. `SENSOR_CACHE_TTL_SECONDS` điều chỉnh TTL và `SENSOR_CACHE_NAMESPACE` tách cache giữa các môi trường dùng chung Redis.
+
+SQL Server lưu bản đo chính thức. Khi Redis gián đoạn, API đọc từ SQL Server và các request ghi vẫn hoạt động. Namespace mặc định của cache là `farm:sensor-data:cache:v1:`.
+
 ### Kiểm thử Postman
 
 Import [collection SCRUM-80](postman/scrum-80.postman_collection.json) và đặt `baseUrl` trỏ tới Sensor Data Service trên database kiểm thử. Điền access token của `ADMIN` vào biến `sensorAdminToken` để chạy cả request đọc và ghi. Collection tự tạo node và UUID theo lần chạy, có cả request đọc và ghi dữ liệu. Có thể chạy từ thư mục dự án bằng Newman.

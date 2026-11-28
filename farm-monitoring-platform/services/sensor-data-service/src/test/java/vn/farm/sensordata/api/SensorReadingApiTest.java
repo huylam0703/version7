@@ -19,6 +19,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import vn.farm.sensordata.application.ReadingRedisCache;
 import vn.farm.sensordata.application.SensorReadingService;
 import vn.farm.sensordata.domain.ReadingValueKind;
 import vn.farm.sensordata.domain.SensorReading;
@@ -47,7 +48,8 @@ class SensorReadingApiTest {
     @BeforeEach
     void setUp() {
         repository = mock(SensorReadingRepository.class, withSettings().mockMaker(MockMakers.PROXY));
-        mvc = MockMvcBuilders.standaloneSetup(new SensorReadingController(new SensorReadingService(repository)))
+        var service = new SensorReadingService(repository, mock(ReadingRedisCache.class));
+        mvc = MockMvcBuilders.standaloneSetup(new SensorReadingController(service))
                 .build();
     }
 

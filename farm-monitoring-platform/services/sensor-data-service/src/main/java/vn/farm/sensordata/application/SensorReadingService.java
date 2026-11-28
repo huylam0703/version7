@@ -32,17 +32,19 @@ public class SensorReadingService {
             LocalDateTime.of(9999, 12, 31, 23, 59, 59, 999_499_999);
 
     private final SensorReadingRepository repository;
+    private final ReadingRedisCache cache;
 
-    public SensorReadingService(SensorReadingRepository repository) {
+    public SensorReadingService(SensorReadingRepository repository, ReadingRedisCache cache) {
         this.repository = repository;
+        this.cache = cache;
     }
 
     public Written saveReading(SensorReadingRequest request) {
-        return persist(prepare(request, null));
+        return persistSingle(prepare(request, null));
     }
 
     public Written saveReading(ReadingSubmission submission) {
-        return persist(prepare(submission.reading(), submission.context()));
+        return persistSingle(prepare(submission.reading(), submission.context()));
     }
 
     public Batch saveBatch(List<ReadingSubmission> submissions) {
@@ -51,13 +53,29 @@ public class SensorReadingService {
                 .toList();
         var items = new ArrayList<BatchItem>(prepared.size());
         var counts = new EnumMap<WriteStatus, Integer>(WriteStatus.class);
-        for (int index = 0; index < prepared.size(); index++) {
-            Written written = persist(prepared.get(index));
-            items.add(new BatchItem(index, written.status(), written.id()));
-            counts.merge(written.status(), 1, Integer::sum);
+        boolean stored = false;
+        try {
+            for (int index = 0; index < prepared.size(); index++) {
+                Written written = persist(prepared.get(index));
+                stored |= written.status() != WriteStatus.DUPLICATE;
+                items.add(new BatchItem(index, written.status(), written.id()));
+                counts.merge(written.status(), 1, Integer::sum);
+            }
+        } finally {
+            if (stored) {
+                cache.readingsChanged();
+            }
         }
         return new Batch(prepared.size(), counts.getOrDefault(WriteStatus.VALID, 0),
                 counts.getOrDefault(WriteStatus.INVALID, 0), counts.getOrDefault(WriteStatus.DUPLICATE, 0), items);
+    }
+
+    private Written persistSingle(PreparedReading prepared) {
+        Written written = persist(prepared);
+        if (written.status() != WriteStatus.DUPLICATE) {
+            cache.readingsChanged();
+        }
+        return written;
     }
 
     private PreparedReading prepare(SensorReadingRequest request, ReadingContext context) {

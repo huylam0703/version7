@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import vn.farm.sensordata.api.dto.ReadingFilter;
 import vn.farm.sensordata.api.dto.ReadingInterval;
 import vn.farm.sensordata.api.dto.ReadingPageRequest;
@@ -24,6 +25,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
+@Transactional(readOnly = true)
 public class ReadingQueryRepository {
     private static final String CANONICAL_CODE = """
             CASE UPPER(TRIM(r.sensor_type))
