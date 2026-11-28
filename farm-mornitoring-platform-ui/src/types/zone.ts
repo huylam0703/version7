@@ -6,5 +6,6 @@ export type ZoneDto = {
   cropType?: string
   centerLat?: number
   centerLng?: number
+  boundaryGeojson?: string | null
   status: string
 }

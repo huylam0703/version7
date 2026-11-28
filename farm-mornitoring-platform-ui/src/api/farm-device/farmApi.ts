@@ -14,6 +14,7 @@ const toFarm = (f: FarmDto): Farm => ({
   name: f.name,
   address: f.address,
   areaHa: f.areaHa,
+  boundaryGeojson: f.boundaryGeojson,
   latitude: f.centerLat,
   longitude: f.centerLng,
   description: f.description,
@@ -26,6 +27,7 @@ const farmBody = (b: Partial<Farm>) => ({
   centerLat: b.latitude,
   centerLng: b.longitude,
   areaHa: b.areaHa,
+  boundaryGeojson: b.boundaryGeojson,
   description: b.description,
 })
 

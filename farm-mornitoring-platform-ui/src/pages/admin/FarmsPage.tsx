@@ -6,14 +6,13 @@ import type { SensorNodeDto } from '../../types/sensor'
 import { getErrorMessage } from '../../api/errorHandler'
 import type { Farm, Zone } from '../../types'
 import { Button, Card, Empty, ErrorBox, Input, Modal, PageHeader, Table, Textarea } from '../../components/Ui'
-import { MapView } from '../../components/MapView'
+import { FarmZoneMap } from '../../components/FarmZoneMap'
+import { areaInHectares, boundaryCenter, containsCenter, defaultFarmMapCenter, isCoordinate, isValidBoundary, namedBoundary, readBoundary, type Coordinates } from '../../utils/farmZoneGeometry'
+import type { Polygon } from 'geojson'
 
 const emptyForm: Partial<Farm> = {
   name: '',
   address: '',
-  areaHa: 0,
-  latitude: 10.76,
-  longitude: 106.66,
   description: '',
   isActive: true,
 }
@@ -32,6 +31,12 @@ export function FarmsPage() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<Partial<Farm>>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editLoading, setEditLoading] = useState(false)
+  const [boundary, setBoundary] = useState<string | null>(null)
+  const [initialBoundary, setInitialBoundary] = useState<Polygon>()
+  const [initialCenter, setInitialCenter] = useState<Coordinates>(defaultFarmMapCenter)
+  const [destination, setDestination] = useState<{ point: Coordinates }>()
+  const [drawing, setDrawing] = useState(false)
   const [selected, setSelected] = useState<Farm | null>(null)
   const [zones, setZones] = useState<Zone[]>([])
   const [nodes, setNodes] = useState<SensorNodeDto[]>([])
@@ -70,27 +75,60 @@ export function FarmsPage() {
     currentPage * pageSize
   )
 
+  const draft = readBoundary({ boundaryGeojson: boundary })
+  const validDraft = isValidBoundary(draft)
+  const location: Coordinates | undefined = form.latitude != null && form.longitude != null &&
+    isCoordinate(form.latitude, form.longitude) ? [form.latitude, form.longitude] : undefined
+  const center = validDraft ? (location && containsCenter(draft, location) ? location : boundaryCenter(draft)) : undefined
+  const marker = center ?? location
+  const hectares = validDraft ? Number(areaInHectares(draft).toFixed(2)) : undefined
+
+  function openForm(farm?: Farm) {
+    const polygon = readBoundary(farm)
+    setEditingId(farm?.id ?? null)
+    setForm(farm ?? emptyForm)
+    setFormError('')
+    setBoundary(polygon ? JSON.stringify(polygon) : null)
+    setInitialBoundary(polygon)
+    setInitialCenter(farm?.latitude != null && farm.longitude != null && isCoordinate(farm.latitude, farm.longitude)
+      ? [farm.latitude, farm.longitude]
+      : defaultFarmMapCenter)
+    setDestination(undefined)
+    setDrawing(false)
+    setOpen(true)
+  }
+
+  async function openEdit(id: string) {
+    setError('')
+    setEditLoading(true)
+    try {
+      openForm(await farmApi.get(id))
+    } catch (e) {
+      setError(getErrorMessage(e))
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
 
-    if (saving) return
+    if (saving || drawing || !validDraft || !center || !hectares) return
+    if (!form.name?.trim()) {
+      setFormError('Farm name is required.')
+      return
+    }
 
     try {
       setSaving(true)
       setFormError('')
 
-      if (editingId) {
-        await farmApi.update(editingId, form)
-      } else {
-        await farmApi.create(form)
-      }
+      const payload = { ...form, name: form.name.trim(), boundaryGeojson: boundary, latitude: center[0], longitude: center[1], areaHa: hectares }
+      const saved = editingId ? await farmApi.update(editingId, payload) : await farmApi.create(payload)
 
       setOpen(false)
       await load()
-
-      if (selected && selected.id === editingId) {
-        await openDetail(selected)
-      }
+      await openDetail(saved)
     } catch (e) {
       setFormError(getErrorMessage(e))
     } finally {
@@ -162,12 +200,20 @@ export function FarmsPage() {
     }]
   })
 
+  const farmOutline = selected ? namedBoundary(selected) : undefined
+  const zoneOutlines = zones.flatMap(zone => {
+    const item = namedBoundary(zone)
+    return item ? [item] : []
+  })
+  const detailCenter: Coordinates | undefined = selected?.latitude != null && selected.longitude != null &&
+    isCoordinate(selected.latitude, selected.longitude) ? [selected.latitude, selected.longitude] : undefined
+
   return (
     <div>
       <PageHeader
         title="Farm management"
-        description="Create and maintain farms, coordinates and zone lists."
-        actions={<Button onClick={() => { setEditingId(null); setForm(emptyForm); setOpen(true) }}>Create farm</Button>}
+        description="Draw farm boundaries and view crop zones on the map."
+        actions={<Button onClick={() => openForm()} disabled={editLoading || saving}>Create farm</Button>}
       />
       <ErrorBox message={error} />
       <div className="mb-4 flex gap-2">
@@ -202,7 +248,7 @@ export function FarmsPage() {
                 <td className="px-3 py-2">{farm.isActive === false ? 'Inactive' : 'Active'}</td>
                 <td className="px-3 py-2 space-x-2">
                   <button className="text-brand" onClick={() => openDetail(farm)}>View</button>
-                  <button className="text-brand" onClick={() => { setEditingId(farm.id); setForm(farm); setOpen(true) }}>Edit</button>
+                  <button className="text-brand disabled:opacity-50" disabled={editLoading || saving} onClick={() => openEdit(farm.id)}>Edit</button>
                   <button
                     className="text-gray-600"
                     onClick={() => changeStatus(farm)}
@@ -246,56 +292,65 @@ export function FarmsPage() {
       ) : selected ? (
         <Card className="mt-4">
           <h3 className="mb-2 font-medium">{selected.name}</h3>
-          <p className="mb-3 text-sm text-gray-500">{selected.address} · {selected.areaHa} ha</p>
-          <MapView
+          <p className="mb-3 text-sm text-muted">{[selected.address, selected.areaHa != null ? `${selected.areaHa} ha` : null].filter(Boolean).join(' · ')}</p>
+          {!isValidBoundary(farmOutline?.polygon) && (
+            <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-amber-800">
+              <span>This farm needs a boundary before you can draw zones.</span>
+              <Button variant="outline" disabled={editLoading || saving} onClick={() => openEdit(selected.id)}>Add boundary</Button>
+            </div>
+          )}
+          <FarmZoneMap
             key={selected.id}
-            center={[
-              selected.latitude ?? 10.76,
-              selected.longitude ?? 106.66
-            ]}
+            center={detailCenter ?? defaultFarmMapCenter}
+            fitBoundary={farmOutline?.polygon}
+            fitPoints
+            farm={farmOutline}
+            zones={zoneOutlines}
             points={[
-              ...(selected.latitude != null &&
-                  selected.longitude != null
-                ? [{
-                    id: selected.id,
-                    lat: selected.latitude,
-                    lng: selected.longitude,
-                    popup: selected.name,
-                  }]
-                : []),
+              ...(detailCenter ? [{ id: selected.id, lat: detailCenter[0], lng: detailCenter[1], popup: selected.name }] : []),
               ...nodePoints,
             ]}
-            polygons={selected.boundary ? [selected.boundary] : []}
           />
           <h4 className="mt-4 mb-2 text-sm font-medium">Zones in this farm</h4>
           {zones.length === 0 ? <Empty text="No zones" /> : zones.map((z) => <p key={z.id} className="text-sm">{z.name} — {z.cropType}</p>)}
         </Card>
       ) : null}
 
-      <Modal open={open} title={editingId ? 'Edit farm' : 'Create farm'} onClose={() => setOpen(false)}>
-        <form className="space-y-3" onSubmit={onSubmit}>
-          <ErrorBox message={formError} />
-          <Input label="Name" value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          <Input label="Address" value={form.address || ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-          <Input label="Area (ha)" type="number" value={form.areaHa ?? 0} onChange={(e) => setForm({ ...form, areaHa: Number(e.target.value) })} />
-          <div className="grid grid-cols-2 gap-2">
-            <Input label="Latitude" type="number" step="any" value={form.latitude ?? 0} onChange={(e) => setForm({ ...form, latitude: Number(e.target.value) })} />
-            <Input label="Longitude" type="number" step="any" value={form.longitude ?? 0} onChange={(e) => setForm({ ...form, longitude: Number(e.target.value) })} />
+      <Modal open={open} title={editingId ? 'Edit farm' : 'Create farm'} wide onClose={() => { if (!saving) setOpen(false) }}>
+        <form className="space-y-4" onSubmit={onSubmit}>
+          <ErrorBox message={formError || (boundary && !validDraft ? 'Draw a valid polygon without crossing edges.' : '')} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input label="Name" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={150} required />
+            <Input label="Address" value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })} maxLength={255} />
           </div>
-          <Textarea label="Description" value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <Textarea label="Description" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} />
+          <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
+            <Input label="Latitude" type="number" step="any" min={-90} max={90} value={form.latitude ?? ''} onChange={e => setForm({ ...form, latitude: e.target.value === '' ? undefined : e.target.valueAsNumber })} />
+            <Input label="Longitude" type="number" step="any" min={-180} max={180} value={form.longitude ?? ''} onChange={e => setForm({ ...form, longitude: e.target.value === '' ? undefined : e.target.valueAsNumber })} />
+            <div className="col-span-2 sm:col-span-1">
+              <Button variant="outline" disabled={!location || drawing} onClick={() => { if (location) setDestination({ point: location }) }}>Go to location</Button>
+            </div>
+          </div>
+          <FarmZoneMap
+            center={initialCenter}
+            fitBoundary={initialBoundary}
+            destination={destination}
+            points={marker ? [{ id: 'center', lat: marker[0], lng: marker[1] }] : []}
+            editor={{ value: boundary, onChange: setBoundary, onBusyChange: setDrawing }}
+            onPickCenter={([latitude, longitude]) => setForm(current => ({ ...current, latitude, longitude }))}
+            height={340}
+          />
+          <dl className="flex flex-wrap gap-x-8 gap-y-2 rounded-xl bg-stone-50 px-4 py-3 text-sm">
+            <div><dt className="text-muted">Area (ha)</dt><dd>{hectares?.toFixed(2) ?? '—'}</dd></div>
+            <div><dt className="text-muted">Center to save</dt><dd>{center ? center.map(value => value.toFixed(6)).join(', ') : '—'}</dd></div>
+          </dl>
+          {hectares === 0 && <p className="text-sm text-amber-800">This boundary rounds to 0.00 ha. Draw a farm boundary of at least 0.005 ha to save it.</p>}
+          {center && location && (center[0] !== location[0] || center[1] !== location[1]) && (
+            <p className="text-sm text-muted">The selected location is outside the interior. The center to save is calculated from the boundary.</p>
+          )}
           <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={saving}
-              onClick={() => setOpen(false)}
-            >
-              Cancel
-            </Button>
-
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
+            <Button variant="outline" disabled={saving} onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={saving || drawing || !validDraft || !hectares}>{saving ? 'Saving...' : 'Save'}</Button>
           </div>
         </form>
       </Modal>

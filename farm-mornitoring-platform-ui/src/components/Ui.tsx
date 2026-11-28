@@ -222,16 +222,18 @@ export function Modal({
   title,
   onClose,
   children,
+  wide = false,
 }: {
   open: boolean
   title: string
   onClose: () => void
   children: ReactNode
+  wide?: boolean
 }) {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/45 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-xl">
+      <div className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-xl ${wide ? 'max-w-4xl' : 'max-w-lg'}`}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-ink">{title}</h2>
           <button onClick={onClose} className="rounded-lg px-2 py-1 text-stone-500 hover:bg-stone-100 hover:text-ink">
