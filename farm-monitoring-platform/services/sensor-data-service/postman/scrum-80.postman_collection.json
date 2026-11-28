@@ -4,10 +4,24 @@
     "description": "Writes uniquely named test readingJson. Run against a disposable Sensor Data database with migrations 03 and 04 applied.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{sensorAdminToken}}",
+        "type": "string"
+      }
+    ]
+  },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://localhost:8084"
+    },
+    {
+      "key": "sensorAdminToken",
+      "value": ""
     }
   ],
   "item": [

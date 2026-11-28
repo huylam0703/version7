@@ -11,6 +11,22 @@ mvn -f services/sensor-data-service/pom.xml verify
 mvn -f services/sensor-data-service/pom.xml spring-boot:run
 ```
 
+## Xác thực và phân quyền
+
+Các API đọc và ghi trên cả hai phiên bản yêu cầu header `Authorization: Bearer <token>` từ User Auth. Thiếu token, token sai hoặc hết hạn trả HTTP `401`. Token hợp lệ nhưng thiếu quyền trả HTTP `403`.
+
+| Danh tính | Đọc bản đo và thống kê | Ghi đơn và ghi batch |
+| --- | --- | --- |
+| `ADMIN` | Có | Có |
+| `OPERATOR` | Có | — |
+| Simulator hoặc tài khoản `SERVICE` có mã client trong danh sách cho phép | — | Có |
+
+Sensor Data kiểm tra chữ ký bằng JWKS, issuer, audience và hạn JWT. Cấu hình mặc định là issuer `farm-auth`, audience `farm-api` và JWKS tại `http://localhost:8081/.well-known/jwks.json`. Đặt `AUTH_JWKS_URI` theo địa chỉ User Auth mà tiến trình Sensor Data truy cập được. Trong mạng Docker Compose của dự án, địa chỉ nội bộ là `http://user-auth-service:8080/.well-known/jwks.json`. Dùng `AUTH_ISSUER` và `AUTH_AUDIENCE` nếu môi trường triển khai có giá trị riêng.
+
+`SENSOR_WRITER_CLIENT_IDS` nhận danh sách mã client phân cách bằng dấu phẩy, mặc định là `uav-simulator-01`. Token Simulator phải có `client_id` khớp với `sub`. Token `SERVICE` được đối chiếu theo `sub`. Các bộ lọc `farmId` và `zoneId` dùng để lọc kết quả. Quyền đọc hiện xét theo vai trò.
+
+Trong Swagger UI, chọn **Authorize** và nhập access token. Luồng gửi batch trực tiếp từ Simulator yêu cầu kèm token của client có quyền ghi.
+
 ## Gửi bản đo
 
 Dùng `POST /api/sensor-readings`. Firmware gửi một bản đo trên mỗi request với `nodeId` cố định theo thiết bị. Giữ nguyên `measuredAt` khi gửi lại. Hai timestamp dùng chuỗi ISO local date-time như trước. Hai thiết bị cần thống nhất dùng giờ UTC trong chuỗi gửi lên. Service làm tròn tới mili giây để khớp SQL Server.
@@ -97,8 +113,8 @@ Lỗi v1 trả `application/problem+json` với HTTP status, `code`, `traceId` v
 
 ### Kiểm thử Postman
 
-Import [collection SCRUM-80](postman/scrum-80.postman_collection.json) và đặt `baseUrl` trỏ tới Sensor Data Service trên database kiểm thử. Collection tự tạo node và UUID theo lần chạy, có cả request đọc và ghi dữ liệu. Có thể chạy từ thư mục dự án bằng Newman.
+Import [collection SCRUM-80](postman/scrum-80.postman_collection.json) và đặt `baseUrl` trỏ tới Sensor Data Service trên database kiểm thử. Điền access token của `ADMIN` vào biến `sensorAdminToken` để chạy cả request đọc và ghi. Collection tự tạo node và UUID theo lần chạy, có cả request đọc và ghi dữ liệu. Có thể chạy từ thư mục dự án bằng Newman.
 
 ```powershell
-npx.cmd --yes --package=newman@6.2.1 newman run services/sensor-data-service/postman/scrum-80.postman_collection.json --env-var baseUrl=http://localhost:8084
+npx.cmd --yes --package=newman@6.2.1 newman run services/sensor-data-service/postman/scrum-80.postman_collection.json --env-var baseUrl=http://localhost:8084 --env-var "sensorAdminToken=$env:SENSOR_ADMIN_TOKEN"
 ```
